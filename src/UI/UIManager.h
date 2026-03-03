@@ -2,6 +2,7 @@
 
 #include <imgui.h>
 #include <string>
+#include "services/BlenderFetcher.h"
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Pages de navigation
@@ -36,8 +37,12 @@ private:
                   const char* value, const char* sub, ImVec4 accent);
     bool navButton(const char* label, bool selected, float width);
 
-    // ── État ─────────────────────────────────────────────────────────────────
-    NavPage m_currentPage  = NavPage::Dashboard;
+    // ── État ────────────────────────────────────────────────────
+    NavPage        m_currentPage    = NavPage::Dashboard;
+
+    BlenderFetcher m_fetcher;
+    bool           m_fetchTriggered = false;
+    bool           m_showRecentOnly = true;   // masquer versions < 2.80
 
     // Settings state
     char m_installPath [256] = "/opt/blender";

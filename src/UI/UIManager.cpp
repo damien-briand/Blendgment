@@ -28,6 +28,8 @@ namespace Col {
 // ─────────────────────────────────────────────────────────────────────────────
 void UIManager::render()
 {
+    if (!m_fetchTriggered) { m_fetcher.fetch(); m_fetchTriggered = true; }
+
     ImGuiIO& io = ImGui::GetIO();
 
     // Fenêtre racine sans décoration, couvre tout l'écran
@@ -122,7 +124,7 @@ void UIManager::renderSidebar(float topOffset, float sideW, float height)
         ImGui::SetCursorPosX(10.f);
         if (navButton(item.label, sel, sideW - 20.f))
             m_currentPage = item.page;
-            
+
         ImGui::Dummy(ImVec2(0.f, 4.f));
     }
 
@@ -172,7 +174,7 @@ void UIManager::pageDashboard()
 
     ImGui::SetCursorPos({28.f, 54.f});
     ImGui::PushStyleColor(ImGuiCol_Text, Col::TextDim);
-    ImGui::Text("Bienvenue dans Blendgment – gestionnaire de versions et de projets Blender.");
+    ImGui::Text("Bienvenue dans Blendgment, gestionnaire de versions et de projets Blender.");
     ImGui::PopStyleColor();
 
     // ── Cartes de statistiques ────────────────────────────────────────────────
@@ -181,7 +183,13 @@ void UIManager::pageDashboard()
     ImGui::SameLine(0.f, 14.f);
     statCard("##c2", "Projets",             "0", "Aucun projet",       Col::Blue);
     ImGui::SameLine(0.f, 14.f);
-    statCard("##c3", "Derniere version",  "4.4", "Disponible en ligne", Col::Green);
+    {
+        std::string latestVal = m_fetcher.hasData() ? m_fetcher.getLatestVersion() : "...";
+        const char* latestSub = m_fetcher.isLoading() ? "Chargement..."
+                              : m_fetcher.hasData()   ? "Disponible en ligne"
+                              :                         "Aller sur Versions";
+        statCard("##c3", "Derniere version", latestVal.c_str(), latestSub, Col::Green);
+    }
 
     // ── Activité récente ──────────────────────────────────────────────────────
     ImGui::SetCursorPos({28.f, 230.f});
@@ -205,54 +213,142 @@ void UIManager::pageDashboard()
 // ─────────────────────────────────────────────────────────────────────────────
 void UIManager::pageVersions()
 {
+    bool        loading  = m_fetcher.isLoading();
+    bool        failed   = m_fetcher.hasFailed();
+    bool        hasData  = m_fetcher.hasData();
+    auto        versions = hasData ? m_fetcher.getVersions() : std::vector<BlenderVersion>{};
+
+    // ── Titre ─────────────────────────────────────────────────────────────────
     ImGui::SetCursorPos({28.f, 28.f});
     ImGui::PushStyleColor(ImGuiCol_Text, Col::Text);
     ImGui::Text("Versions Blender");
     ImGui::PopStyleColor();
 
-    // ── Bouton installer ──────────────────────────────────────────────────────
-    ImGui::SetCursorPos({28.f, 72.f});
-    ImGui::PushStyleColor(ImGuiCol_Button,        Col::Accent);
-    ImGui::PushStyleColor(ImGuiCol_ButtonHovered, Col::AccentHover);
-    ImGui::PushStyleColor(ImGuiCol_ButtonActive,  Col::AccentPress);
-    ImGui::PushStyleVar  (ImGuiStyleVar_FrameRounding, 6.f);
-    if (ImGui::Button("+ Installer une version", ImVec2(200.f, 36.f))) {
-        // TODO : ouvrir le navigateur de versions (étape 3)
+    // ── Ligne de statut ───────────────────────────────────────────────────────
+    ImGui::SetCursorPos({28.f, 58.f});
+    if (loading) {
+        ImGui::PushStyleColor(ImGuiCol_Text, Col::TextHint);
+        ImGui::Text("Chargement depuis download.blender.org...");
+        ImGui::PopStyleColor();
+    } else if (failed) {
+        ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.9f, 0.3f, 0.3f, 1.f));
+        ImGui::Text("Erreur de connexion.");
+        ImGui::PopStyleColor();
+    } else if (hasData) {
+        ImGui::PushStyleColor(ImGuiCol_Text, Col::TextDim);
+        ImGui::Text("%zu versions trouvees  |  Derniere : Blender %s",
+                    versions.size(), m_fetcher.getLatestVersion().c_str());
+        ImGui::PopStyleColor();
     }
+
+    // ── Controles ─────────────────────────────────────────────────────────────
+    ImGui::SetCursorPos({28.f, 90.f});
+
+    if (loading) ImGui::BeginDisabled();
+    ImGui::PushStyleColor(ImGuiCol_Button,        Col::BgCard);
+    ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(0.25f, 0.25f, 0.32f, 1.f));
+    ImGui::PushStyleColor(ImGuiCol_ButtonActive,  Col::BgPanel);
+    ImGui::PushStyleVar  (ImGuiStyleVar_FrameRounding, 6.f);
+    if (ImGui::Button(loading ? "Actualisation..." : "  Actualiser", ImVec2(150.f, 32.f)))
+        m_fetcher.fetch();
     ImGui::PopStyleVar();
     ImGui::PopStyleColor(3);
+    if (loading) ImGui::EndDisabled();
 
-    // ── Tableau vide (placeholder) ────────────────────────────────────────────
-    ImGui::SetCursorPos({28.f, 130.f});
-    ImGui::PushStyleColor(ImGuiCol_ChildBg, Col::BgPanel);
-    ImGui::PushStyleVar(ImGuiStyleVar_ChildRounding, 8.f);
-    ImGui::BeginChild("##vtable", ImVec2(680.f, 320.f), false);
+    ImGui::SameLine(0.f, 14.f);
+    ImGui::SetCursorPosY(97.f);
+    ImGui::Checkbox("Masquer versions < 2.80", &m_showRecentOnly);
 
-    // En-tête
-    ImGui::PushStyleColor(ImGuiCol_ChildBg, Col::BgCard);
-    ImGui::BeginChild("##vhead", ImVec2(680.f, 36.f), false);
-    float cols[] = {180.f, 120.f, 140.f, 120.f};
-    const char* headers[] = {"Version", "Statut", "Taille", "Actions"};
-    float cx = 16.f;
-    for (int i = 0; i < 4; ++i) {
-        ImGui::SetCursorPos({cx, 10.f});
-        ImGui::PushStyleColor(ImGuiCol_Text, Col::TextDim);
-        ImGui::Text("%s", headers[i]);
+    // ── Tableau des versions ──────────────────────────────────────────────────
+    ImGui::SetCursorPos({28.f, 140.f});
+    float tableH = ImGui::GetContentRegionAvail().y - 16.f;
+
+    ImGui::PushStyleColor(ImGuiCol_ChildBg,         Col::BgPanel);
+    ImGui::PushStyleColor(ImGuiCol_TableRowBg,       ImVec4(0.f, 0.f, 0.f, 0.f));
+    ImGui::PushStyleColor(ImGuiCol_TableRowBgAlt,    ImVec4(0.16f, 0.16f, 0.21f, 1.f));
+    ImGui::PushStyleColor(ImGuiCol_TableHeaderBg,    Col::BgCard);
+    ImGui::PushStyleColor(ImGuiCol_TableBorderLight, Col::Separator);
+    ImGui::PushStyleVar  (ImGuiStyleVar_ChildRounding, 8.f);
+    ImGui::BeginChild("##vtable", ImVec2(-16.f, tableH), false);
+
+    if (!hasData && !failed) {
+        ImGui::SetCursorPos({16.f, 16.f});
+        ImGui::PushStyleColor(ImGuiCol_Text, Col::TextHint);
+        ImGui::Text(loading ? "Chargement..." : "En attente...");
         ImGui::PopStyleColor();
-        cx += cols[i];
-    }
-    ImGui::EndChild();
-    ImGui::PopStyleColor();
+    } else if (failed) {
+        ImGui::SetCursorPos({16.f, 20.f});
+        ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.9f, 0.3f, 0.3f, 1.f));
+        ImGui::Text("Impossible de contacter download.blender.org");
+        ImGui::PopStyleColor();
+        ImGui::SetCursorPos({16.f, 48.f});
+        ImGui::PushStyleColor(ImGuiCol_Text, Col::TextHint);
+        ImGui::Text("Verifiez votre connexion puis cliquez sur Actualiser.");
+        ImGui::PopStyleColor();
+    } else {
+        if (ImGui::BeginTable("##vlist", 3,
+            ImGuiTableFlags_ScrollY | ImGuiTableFlags_BordersInnerH | ImGuiTableFlags_RowBg,
+            ImVec2(0.f, 0.f)))
+        {
+            ImGui::TableSetupScrollFreeze(0, 1);
+            ImGui::TableSetupColumn("Version", ImGuiTableColumnFlags_WidthFixed,   160.f);
+            ImGui::TableSetupColumn("Statut",  ImGuiTableColumnFlags_WidthFixed,   200.f);
+            ImGui::TableSetupColumn("Actions", ImGuiTableColumnFlags_WidthStretch);
+            ImGui::TableHeadersRow();
 
-    // Ligne vide
-    ImGui::SetCursorPos({16.f, 70.f});
-    ImGui::PushStyleColor(ImGuiCol_Text, Col::TextHint);
-    ImGui::Text("Aucune version installee. Cliquez sur '+ Installer une version'.");
-    ImGui::PopStyleColor();
+            // Du plus récent au plus ancien
+            for (int i = (int)versions.size() - 1; i >= 0; --i) {
+                const auto& v = versions[i];
+
+                if (m_showRecentOnly) {
+                    int major = 0, minor = 0;
+                    std::sscanf(v.version.c_str(), "%d.%d", &major, &minor);
+                    if (major < 2 || (major == 2 && minor < 80)) continue;
+                }
+
+                ImGui::TableNextRow(0, 38.f);
+
+                ImGui::TableSetColumnIndex(0);
+                ImGui::SetCursorPosY(ImGui::GetCursorPosY() + 6.f);
+                ImGui::PushStyleColor(ImGuiCol_Text, Col::Text);
+                ImGui::Text("Blender %s", v.version.c_str());
+                ImGui::PopStyleColor();
+
+                ImGui::TableSetColumnIndex(1);
+                ImGui::SetCursorPosY(ImGui::GetCursorPosY() + 6.f);
+                if (v.isLatest) {
+                    ImGui::PushStyleColor(ImGuiCol_Text, Col::Green);
+                    ImGui::Text("\u25cf Derniere version");
+                    ImGui::PopStyleColor();
+                } else {
+                    ImGui::PushStyleColor(ImGuiCol_Text, Col::TextHint);
+                    ImGui::Text("Disponible");
+                    ImGui::PopStyleColor();
+                }
+
+                ImGui::TableSetColumnIndex(2);
+                ImGui::SetCursorPosY(ImGui::GetCursorPosY() + 4.f);
+                ImGui::PushStyleColor(ImGuiCol_Button,
+                    v.isLatest ? Col::Accent      : Col::BgCard);
+                ImGui::PushStyleColor(ImGuiCol_ButtonHovered,
+                    v.isLatest ? Col::AccentHover : ImVec4(0.25f, 0.25f, 0.32f, 1.f));
+                ImGui::PushStyleColor(ImGuiCol_ButtonActive,
+                    v.isLatest ? Col::AccentPress : Col::BgPanel);
+                ImGui::PushStyleVar(ImGuiStyleVar_FrameRounding, 5.f);
+                std::string btnId = "Installer##" + v.version;
+                if (ImGui::Button(btnId.c_str(), ImVec2(100.f, 26.f))) {
+                    // TODO : telechargement (etape 3)
+                }
+                ImGui::PopStyleVar();
+                ImGui::PopStyleColor(3);
+            }
+            ImGui::EndTable();
+        }
+    }
 
     ImGui::EndChild();
     ImGui::PopStyleVar();
-    ImGui::PopStyleColor();
+    ImGui::PopStyleColor(5);
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
