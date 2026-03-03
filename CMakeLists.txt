@@ -46,11 +46,21 @@ set(SOURCES
     src/main.cpp
     src/Application.cpp
     src/VulkanContext.cpp
-    src/Window.cpp
     src/UI/UIManager.cpp
 )
 
-add_executable(${PROJECT_NAME} ${SOURCES})
+set(CORE
+    src/core/Window.cpp
+    src/core/Instance.cpp
+    src/core/Device.cpp
+)
+
+set(RENDERING
+    src/rendering/SwapChain.cpp
+    src/rendering/Renderer.cpp
+)
+
+add_executable(${PROJECT_NAME} ${SOURCES} ${CORE} ${RENDERING})
 
 target_include_directories(${PROJECT_NAME} PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/src
