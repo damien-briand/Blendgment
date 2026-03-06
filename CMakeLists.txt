@@ -65,7 +65,11 @@ set(SERVICES
     src/services/BlenderFetcher.cpp
 )
 
-add_executable(${PROJECT_NAME} ${SOURCES} ${CORE} ${RENDERING} ${SERVICES})
+set(UTILS
+    src/utils/SynchronousDownloader.cpp
+)
+
+add_executable(${PROJECT_NAME} ${SOURCES} ${CORE} ${RENDERING} ${SERVICES} ${UTILS})
 
 target_include_directories(${PROJECT_NAME} PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/src
