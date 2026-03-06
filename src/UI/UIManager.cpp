@@ -1,7 +1,9 @@
 #include "UIManager.h"
 #include <imgui.h>
 #include <cstdio>
+#include <cmath>
 #include <chrono>
+#include <filesystem>
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Palette de couleurs (thème sombre inspiré de Blender)
@@ -321,7 +323,7 @@ void UIManager::pageVersions()
                 ImGui::SetCursorPosY(ImGui::GetCursorPosY() + 6.f);
                 if (v.isLatest) {
                     ImGui::PushStyleColor(ImGuiCol_Text, Col::Green);
-                    ImGui::Text("\u25cf Derniere version");
+                    ImGui::Text("Derniere version");
                     ImGui::PopStyleColor();
                 } else {
                     ImGui::PushStyleColor(ImGuiCol_Text, Col::TextHint);
@@ -496,11 +498,12 @@ void UIManager::renderInstallModal()
 {
     if (!m_install.visible) return;
 
-    // ── Vérifier si le téléchargement est terminé ─────────────────────────────
-    if (m_install.downloading && m_install.future.valid()) {
+    // ── Vérifier si le futur (download+extract) est terminé ──────────────────
+    if ((m_install.downloading || m_install.extracting) && m_install.future.valid()) {
         if (m_install.future.wait_for(std::chrono::seconds(0)) == std::future_status::ready) {
             m_install.future.get();
             m_install.downloading = false;
+            m_install.extracting  = false;
         }
     }
 
@@ -638,28 +641,31 @@ void UIManager::renderInstallModal()
         ImGui::Spacing();
 
         // ── Zone progression / état ────────────────────────────────────────────
-        DownloadProgress prog;
+        DownloadProgress  prog;
+        ExtractProgress   extProg;
         {
             std::lock_guard<std::mutex> lk(m_install.progressMutex);
-            prog = m_install.progress;
+            prog    = m_install.progress;
+            extProg = m_install.extractProgress;
         }
 
         if (m_install.downloading) {
-            // Barre de progression
+            // ── Téléchargement en cours ────────────────────────────────────────
+            ImGui::PushStyleColor(ImGuiCol_Text, Col::TextDim);
+            ImGui::Text("Telechargement...");
+            ImGui::PopStyleColor();
+
             char progLabel[64];
             snprintf(progLabel, sizeof(progLabel), "%.0f%%", prog.fraction() * 100.f);
             ImGui::PushStyleColor(ImGuiCol_PlotHistogram, Col::Accent);
             ImGui::ProgressBar(prog.fraction(), ImVec2(-1.f, 18.f), progLabel);
             ImGui::PopStyleColor();
 
-            ImGui::PushStyleColor(ImGuiCol_Text, Col::TextDim);
-            std::string sizeStr = prog.humanSize();
-            ImGui::Text("%s", sizeStr.c_str());
+            ImGui::PushStyleColor(ImGuiCol_Text, Col::TextHint);
+            ImGui::Text("%s", prog.humanSize().c_str());
             ImGui::PopStyleColor();
 
             ImGui::Spacing();
-
-            // Bouton Annuler
             ImGui::PushStyleColor(ImGuiCol_Button,        ImVec4(0.55f, 0.18f, 0.18f, 1.f));
             ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(0.70f, 0.22f, 0.22f, 1.f));
             ImGui::PushStyleColor(ImGuiCol_ButtonActive,  ImVec4(0.40f, 0.12f, 0.12f, 1.f));
@@ -669,13 +675,48 @@ void UIManager::renderInstallModal()
             ImGui::PopStyleVar();
             ImGui::PopStyleColor(3);
 
-        } else if (prog.done) {
-            // Succès
+        } else if (m_install.extracting) {
+            // ── Extraction en cours ────────────────────────────────────────────
+            ImGui::PushStyleColor(ImGuiCol_Text, Col::TextDim);
+            ImGui::Text("Extraction en cours...");
+            ImGui::PopStyleColor();
+
+            // Barre indéterminée (on ne connaît pas le nombre total d'entrées)
+            float t = static_cast<float>(ImGui::GetTime());
+            float p = (std::sin(t * 2.5f) * 0.5f + 0.5f) * 0.85f + 0.05f;
+            ImGui::PushStyleColor(ImGuiCol_PlotHistogram, Col::Accent);
+            ImGui::ProgressBar(p, ImVec2(-1.f, 18.f), "");
+            ImGui::PopStyleColor();
+
+            ImGui::PushStyleColor(ImGuiCol_Text, Col::TextHint);
+            if (!extProg.currentFile.empty()) {
+                // Tronquer si trop long
+                std::string fname = extProg.currentFile;
+                if (fname.size() > 55) fname = "..." + fname.substr(fname.size() - 52);
+                ImGui::Text("%llu entrees  |  %s",
+                            (unsigned long long)extProg.entriesDone, fname.c_str());
+            } else {
+                ImGui::Text("Preparation...");
+            }
+            ImGui::PopStyleColor();
+
+            ImGui::Spacing();
+            ImGui::PushStyleColor(ImGuiCol_Button,        ImVec4(0.55f, 0.18f, 0.18f, 1.f));
+            ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(0.70f, 0.22f, 0.22f, 1.f));
+            ImGui::PushStyleColor(ImGuiCol_ButtonActive,  ImVec4(0.40f, 0.12f, 0.12f, 1.f));
+            ImGui::PushStyleVar  (ImGuiStyleVar_FrameRounding, 6.f);
+            if (ImGui::Button("Annuler##ext", ImVec2(120.f, 32.f)) && m_install.extractor)
+                m_install.extractor->cancel();
+            ImGui::PopStyleVar();
+            ImGui::PopStyleColor(3);
+
+        } else if (extProg.done) {
+            // ── Succès final ───────────────────────────────────────────────────
             ImGui::PushStyleColor(ImGuiCol_Text, Col::Green);
-            ImGui::Text("\u2713 Telechargement termine !");
+            ImGui::Text("\u2713 Installation terminee !");
             ImGui::PopStyleColor();
             ImGui::PushStyleColor(ImGuiCol_Text, Col::TextHint);
-            ImGui::TextWrapped("%s", m_install.downloadedPath.c_str());
+            ImGui::TextWrapped("%s", m_install.extractedDir.c_str());
             ImGui::PopStyleColor();
             ImGui::Spacing();
 
@@ -690,18 +731,31 @@ void UIManager::renderInstallModal()
             ImGui::PopStyleVar();
             ImGui::PopStyleColor(3);
 
-        } else if (prog.failed) {
-            // Échec
+        } else if (extProg.failed || prog.failed) {
+            // ── Échec ──────────────────────────────────────────────────────────
             ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.9f, 0.3f, 0.3f, 1.f));
-            ImGui::Text("\u2715 Echec du telechargement");
+            ImGui::Text(extProg.failed ? "\u2715 Echec de l'extraction"
+                                       : "\u2715 Echec du telechargement");
             ImGui::PopStyleColor();
             ImGui::PushStyleColor(ImGuiCol_Text, Col::TextHint);
-            ImGui::TextWrapped("%s", prog.error.c_str());
+            const std::string& errMsg = extProg.failed ? extProg.error : prog.error;
+            if (!errMsg.empty()) ImGui::TextWrapped("%s", errMsg.c_str());
             ImGui::PopStyleColor();
             ImGui::Spacing();
 
+            ImGui::PushStyleColor(ImGuiCol_Button,        Col::BgCard);
+            ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(0.25f, 0.25f, 0.32f, 1.f));
+            ImGui::PushStyleColor(ImGuiCol_ButtonActive,  Col::BgPanel);
+            ImGui::PushStyleVar  (ImGuiStyleVar_FrameRounding, 6.f);
+            if (ImGui::Button("Fermer", ImVec2(100.f, 32.f))) {
+                m_install.visible = false;
+                ImGui::CloseCurrentPopup();
+            }
+            ImGui::PopStyleVar();
+            ImGui::PopStyleColor(3);
+
         } else {
-            // Boutons Télécharger / Annuler
+            // ── Boutons Télécharger / Annuler ──────────────────────────────────
             bool canDownload = !m_install.selectedPatch.empty() && relHas;
 
             if (!canDownload) ImGui::BeginDisabled();
@@ -712,31 +766,65 @@ void UIManager::renderInstallModal()
             if (ImGui::Button("Telecharger", ImVec2(140.f, 32.f))) {
                 std::string filename = SynchronousDownloader::buildFilename(
                     m_install.selectedPatch, plat.os, plat.arch, m_install.selectedFmt);
-                std::string url = SynchronousDownloader::buildUrl(
+                std::string url    = SynchronousDownloader::buildUrl(
                     m_install.majorMinor, filename);
                 std::string outDir = m_install.outputDir;
 
-                m_install.downloading = true;
-                m_install.progress    = {};
-                m_install.downloader  = std::make_unique<SynchronousDownloader>();
+                m_install.downloading   = true;
+                m_install.progress      = {};
+                m_install.extractProgress = {};
+                m_install.downloader    = std::make_unique<SynchronousDownloader>();
+                m_install.extractor     = std::make_unique<Extractor>();
 
-                SynchronousDownloader* dlPtr = m_install.downloader.get();
+                SynchronousDownloader* dlPtr  = m_install.downloader.get();
+                Extractor*             extPtr = m_install.extractor.get();
+
                 m_install.future = std::async(std::launch::async,
-                    [this, dlPtr, url, outDir]()
+                    [this, dlPtr, extPtr, url, outDir]()
                     {
-                        auto cb = [this](const DownloadProgress& p) {
+                        // ── 1. Téléchargement ─────────────────────────────────
+                        auto dlCb = [this](const DownloadProgress& p) {
                             std::lock_guard<std::mutex> lk(m_install.progressMutex);
                             m_install.progress = p;
                         };
-                        std::string result = dlPtr->download(url, outDir, cb);
+                        std::string archivePath = dlPtr->download(url, outDir, dlCb);
 
-                        std::lock_guard<std::mutex> lk(m_install.progressMutex);
-                        if (!result.empty()) {
-                            m_install.progress.done  = true;
-                            m_install.downloadedPath = result;
-                        } else if (!dlPtr->isCancelled()) {
-                            m_install.progress.failed = true;
-                            m_install.progress.error  = "Telechargement echoue.";
+                        if (archivePath.empty()) {
+                            if (!dlPtr->isCancelled()) {
+                                std::lock_guard<std::mutex> lk(m_install.progressMutex);
+                                m_install.progress.failed = true;
+                                m_install.progress.error  = "Telechargement echoue.";
+                            }
+                            return;
+                        }
+
+                        // ── 2. Extraction ─────────────────────────────────────
+                        {
+                            std::lock_guard<std::mutex> lk(m_install.progressMutex);
+                            m_install.downloading = false;
+                            m_install.extracting  = true;
+                        }
+
+                        auto extCb = [this](const ExtractProgress& p) {
+                            std::lock_guard<std::mutex> lk(m_install.progressMutex);
+                            m_install.extractProgress = p;
+                        };
+                        std::string extracted = extPtr->extract(archivePath, outDir, extCb);
+
+                        {
+                            std::lock_guard<std::mutex> lk(m_install.progressMutex);
+                            m_install.extracting = false;
+                            if (!extracted.empty()) {
+                                // Supprimer l'archive maintenant qu'elle n'est plus utile
+                                std::error_code ec;
+                                std::filesystem::remove(archivePath, ec);
+
+                                m_install.extractProgress.done = true;
+                                m_install.extractedDir         = extracted;
+                            } else if (!extPtr->isCancelled()) {
+                                m_install.extractProgress.failed = true;
+                                m_install.extractProgress.error  = "Extraction echouee.";
+                            }
                         }
                     });
             }

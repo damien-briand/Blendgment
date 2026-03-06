@@ -13,6 +13,7 @@ endif()
 find_package(Vulkan REQUIRED)
 find_package(glfw3 3.3 REQUIRED)
 find_package(CURL   REQUIRED)
+find_package(LibArchive REQUIRED)
 
 # ── ImGUI via FetchContent ────────────────────────────────────────────────────
 include(FetchContent)
@@ -67,6 +68,7 @@ set(SERVICES
 
 set(UTILS
     src/utils/SynchronousDownloader.cpp
+    src/utils/Extractor.cpp
 )
 
 add_executable(${PROJECT_NAME} ${SOURCES} ${CORE} ${RENDERING} ${SERVICES} ${UTILS})
@@ -83,6 +85,7 @@ target_link_libraries(${PROJECT_NAME} PRIVATE
     Vulkan::Vulkan
     glfw
     CURL::libcurl
+    LibArchive::LibArchive
 )
 
 # ── Compiler flags ────────────────────────────────────────────────────────────
