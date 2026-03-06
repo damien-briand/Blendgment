@@ -12,6 +12,7 @@ endif()
 # ── Dependencies ──────────────────────────────────────────────────────────────
 find_package(Vulkan REQUIRED)
 find_package(glfw3 3.3 REQUIRED)
+find_package(CURL   REQUIRED)
 
 # ── ImGUI via FetchContent ────────────────────────────────────────────────────
 include(FetchContent)
@@ -46,11 +47,29 @@ set(SOURCES
     src/main.cpp
     src/Application.cpp
     src/VulkanContext.cpp
-    src/Window.cpp
     src/UI/UIManager.cpp
 )
 
-add_executable(${PROJECT_NAME} ${SOURCES})
+set(CORE
+    src/core/Window.cpp
+    src/core/Instance.cpp
+    src/core/Device.cpp
+)
+
+set(RENDERING
+    src/rendering/SwapChain.cpp
+    src/rendering/Renderer.cpp
+)
+
+set(SERVICES
+    src/services/BlenderFetcher.cpp
+)
+
+set(UTILS
+    src/utils/SynchronousDownloader.cpp
+)
+
+add_executable(${PROJECT_NAME} ${SOURCES} ${CORE} ${RENDERING} ${SERVICES} ${UTILS})
 
 target_include_directories(${PROJECT_NAME} PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/src
@@ -63,6 +82,7 @@ target_link_libraries(${PROJECT_NAME} PRIVATE
     imgui_lib
     Vulkan::Vulkan
     glfw
+    CURL::libcurl
 )
 
 # ── Compiler flags ────────────────────────────────────────────────────────────

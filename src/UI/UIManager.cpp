@@ -1,6 +1,7 @@
 #include "UIManager.h"
 #include <imgui.h>
 #include <cstdio>
+#include <chrono>
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Palette de couleurs (thème sombre inspiré de Blender)
@@ -28,6 +29,8 @@ namespace Col {
 // ─────────────────────────────────────────────────────────────────────────────
 void UIManager::render()
 {
+    if (!m_fetchTriggered) { m_fetcher.fetch(); m_fetchTriggered = true; }
+
     ImGuiIO& io = ImGui::GetIO();
 
     // Fenêtre racine sans décoration, couvre tout l'écran
@@ -55,6 +58,8 @@ void UIManager::render()
     renderMainContent(contX, contY, contW, contH);
 
     ImGui::End();
+
+    renderInstallModal();
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -122,7 +127,7 @@ void UIManager::renderSidebar(float topOffset, float sideW, float height)
         ImGui::SetCursorPosX(10.f);
         if (navButton(item.label, sel, sideW - 20.f))
             m_currentPage = item.page;
-            
+
         ImGui::Dummy(ImVec2(0.f, 4.f));
     }
 
@@ -172,7 +177,7 @@ void UIManager::pageDashboard()
 
     ImGui::SetCursorPos({28.f, 54.f});
     ImGui::PushStyleColor(ImGuiCol_Text, Col::TextDim);
-    ImGui::Text("Bienvenue dans Blendgment – gestionnaire de versions et de projets Blender.");
+    ImGui::Text("Bienvenue dans Blendgment, gestionnaire de versions et de projets Blender.");
     ImGui::PopStyleColor();
 
     // ── Cartes de statistiques ────────────────────────────────────────────────
@@ -181,7 +186,13 @@ void UIManager::pageDashboard()
     ImGui::SameLine(0.f, 14.f);
     statCard("##c2", "Projets",             "0", "Aucun projet",       Col::Blue);
     ImGui::SameLine(0.f, 14.f);
-    statCard("##c3", "Derniere version",  "4.4", "Disponible en ligne", Col::Green);
+    {
+        std::string latestVal = m_fetcher.hasData() ? m_fetcher.getLatestVersion() : "...";
+        const char* latestSub = m_fetcher.isLoading() ? "Chargement..."
+                              : m_fetcher.hasData()   ? "Disponible en ligne"
+                              :                         "Aller sur Versions";
+        statCard("##c3", "Derniere version", latestVal.c_str(), latestSub, Col::Green);
+    }
 
     // ── Activité récente ──────────────────────────────────────────────────────
     ImGui::SetCursorPos({28.f, 230.f});
@@ -205,54 +216,144 @@ void UIManager::pageDashboard()
 // ─────────────────────────────────────────────────────────────────────────────
 void UIManager::pageVersions()
 {
+    bool        loading  = m_fetcher.isLoading();
+    bool        failed   = m_fetcher.hasFailed();
+    bool        hasData  = m_fetcher.hasData();
+    auto        versions = hasData ? m_fetcher.getVersions() : std::vector<BlenderVersion>{};
+
+    // ── Titre ─────────────────────────────────────────────────────────────────
     ImGui::SetCursorPos({28.f, 28.f});
     ImGui::PushStyleColor(ImGuiCol_Text, Col::Text);
     ImGui::Text("Versions Blender");
     ImGui::PopStyleColor();
 
-    // ── Bouton installer ──────────────────────────────────────────────────────
-    ImGui::SetCursorPos({28.f, 72.f});
-    ImGui::PushStyleColor(ImGuiCol_Button,        Col::Accent);
-    ImGui::PushStyleColor(ImGuiCol_ButtonHovered, Col::AccentHover);
-    ImGui::PushStyleColor(ImGuiCol_ButtonActive,  Col::AccentPress);
-    ImGui::PushStyleVar  (ImGuiStyleVar_FrameRounding, 6.f);
-    if (ImGui::Button("+ Installer une version", ImVec2(200.f, 36.f))) {
-        // TODO : ouvrir le navigateur de versions (étape 3)
+    // ── Ligne de statut ───────────────────────────────────────────────────────
+    ImGui::SetCursorPos({28.f, 58.f});
+    if (loading) {
+        ImGui::PushStyleColor(ImGuiCol_Text, Col::TextHint);
+        ImGui::Text("Chargement depuis download.blender.org...");
+        ImGui::PopStyleColor();
+    } else if (failed) {
+        ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.9f, 0.3f, 0.3f, 1.f));
+        ImGui::Text("Erreur de connexion.");
+        ImGui::PopStyleColor();
+    } else if (hasData) {
+        ImGui::PushStyleColor(ImGuiCol_Text, Col::TextDim);
+        ImGui::Text("%zu versions trouvees  |  Derniere : Blender %s",
+                    versions.size(), m_fetcher.getLatestVersion().c_str());
+        ImGui::PopStyleColor();
     }
+
+    // ── Controles ─────────────────────────────────────────────────────────────
+    ImGui::SetCursorPos({28.f, 90.f});
+
+    if (loading) ImGui::BeginDisabled();
+    ImGui::PushStyleColor(ImGuiCol_Button,        Col::BgCard);
+    ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(0.25f, 0.25f, 0.32f, 1.f));
+    ImGui::PushStyleColor(ImGuiCol_ButtonActive,  Col::BgPanel);
+    ImGui::PushStyleVar  (ImGuiStyleVar_FrameRounding, 6.f);
+    if (ImGui::Button(loading ? "Actualisation..." : "  Actualiser", ImVec2(150.f, 32.f)))
+        m_fetcher.fetch();
     ImGui::PopStyleVar();
     ImGui::PopStyleColor(3);
+    if (loading) ImGui::EndDisabled();
 
-    // ── Tableau vide (placeholder) ────────────────────────────────────────────
-    ImGui::SetCursorPos({28.f, 130.f});
-    ImGui::PushStyleColor(ImGuiCol_ChildBg, Col::BgPanel);
-    ImGui::PushStyleVar(ImGuiStyleVar_ChildRounding, 8.f);
-    ImGui::BeginChild("##vtable", ImVec2(680.f, 320.f), false);
+    ImGui::SameLine(0.f, 14.f);
+    ImGui::SetCursorPosY(97.f);
+    ImGui::Checkbox("Masquer versions < 2.80", &m_showRecentOnly);
 
-    // En-tête
-    ImGui::PushStyleColor(ImGuiCol_ChildBg, Col::BgCard);
-    ImGui::BeginChild("##vhead", ImVec2(680.f, 36.f), false);
-    float cols[] = {180.f, 120.f, 140.f, 120.f};
-    const char* headers[] = {"Version", "Statut", "Taille", "Actions"};
-    float cx = 16.f;
-    for (int i = 0; i < 4; ++i) {
-        ImGui::SetCursorPos({cx, 10.f});
-        ImGui::PushStyleColor(ImGuiCol_Text, Col::TextDim);
-        ImGui::Text("%s", headers[i]);
+    // ── Tableau des versions ──────────────────────────────────────────────────
+    ImGui::SetCursorPos({28.f, 140.f});
+    float tableH = ImGui::GetContentRegionAvail().y - 16.f;
+
+    ImGui::PushStyleColor(ImGuiCol_ChildBg,         Col::BgPanel);
+    ImGui::PushStyleColor(ImGuiCol_TableRowBg,       ImVec4(0.f, 0.f, 0.f, 0.f));
+    ImGui::PushStyleColor(ImGuiCol_TableRowBgAlt,    ImVec4(0.16f, 0.16f, 0.21f, 1.f));
+    ImGui::PushStyleColor(ImGuiCol_TableHeaderBg,    Col::BgCard);
+    ImGui::PushStyleColor(ImGuiCol_TableBorderLight, Col::Separator);
+    ImGui::PushStyleVar  (ImGuiStyleVar_ChildRounding, 8.f);
+    ImGui::BeginChild("##vtable", ImVec2(-16.f, tableH), false);
+
+    if (!hasData && !failed) {
+        ImGui::SetCursorPos({16.f, 16.f});
+        ImGui::PushStyleColor(ImGuiCol_Text, Col::TextHint);
+        ImGui::Text(loading ? "Chargement..." : "En attente...");
         ImGui::PopStyleColor();
-        cx += cols[i];
-    }
-    ImGui::EndChild();
-    ImGui::PopStyleColor();
+    } else if (failed) {
+        ImGui::SetCursorPos({16.f, 20.f});
+        ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.9f, 0.3f, 0.3f, 1.f));
+        ImGui::Text("Impossible de contacter download.blender.org");
+        ImGui::PopStyleColor();
+        ImGui::SetCursorPos({16.f, 48.f});
+        ImGui::PushStyleColor(ImGuiCol_Text, Col::TextHint);
+        ImGui::Text("Verifiez votre connexion puis cliquez sur Actualiser.");
+        ImGui::PopStyleColor();
+    } else {
+        if (ImGui::BeginTable("##vlist", 3,
+            ImGuiTableFlags_ScrollY | ImGuiTableFlags_BordersInnerH | ImGuiTableFlags_RowBg,
+            ImVec2(0.f, 0.f)))
+        {
+            ImGui::TableSetupScrollFreeze(0, 1);
+            ImGui::TableSetupColumn("Version", ImGuiTableColumnFlags_WidthFixed,   160.f);
+            ImGui::TableSetupColumn("Statut",  ImGuiTableColumnFlags_WidthFixed,   200.f);
+            ImGui::TableSetupColumn("Actions", ImGuiTableColumnFlags_WidthStretch);
+            ImGui::TableHeadersRow();
 
-    // Ligne vide
-    ImGui::SetCursorPos({16.f, 70.f});
-    ImGui::PushStyleColor(ImGuiCol_Text, Col::TextHint);
-    ImGui::Text("Aucune version installee. Cliquez sur '+ Installer une version'.");
-    ImGui::PopStyleColor();
+            // Du plus récent au plus ancien
+            for (int i = (int)versions.size() - 1; i >= 0; --i) {
+                const auto& v = versions[i];
+
+                if (m_showRecentOnly) {
+                    int major = 0, minor = 0;
+                    std::sscanf(v.version.c_str(), "%d.%d", &major, &minor);
+                    if (major < 2 || (major == 2 && minor < 80)) continue;
+                }
+
+                ImGui::TableNextRow(0, 38.f);
+
+                ImGui::TableSetColumnIndex(0);
+                ImGui::SetCursorPosY(ImGui::GetCursorPosY() + 6.f);
+                ImGui::PushStyleColor(ImGuiCol_Text, Col::Text);
+                ImGui::Text("Blender %s", v.version.c_str());
+                ImGui::PopStyleColor();
+
+                ImGui::TableSetColumnIndex(1);
+                ImGui::SetCursorPosY(ImGui::GetCursorPosY() + 6.f);
+                if (v.isLatest) {
+                    ImGui::PushStyleColor(ImGuiCol_Text, Col::Green);
+                    ImGui::Text("\u25cf Derniere version");
+                    ImGui::PopStyleColor();
+                } else {
+                    ImGui::PushStyleColor(ImGuiCol_Text, Col::TextHint);
+                    ImGui::Text("Disponible");
+                    ImGui::PopStyleColor();
+                }
+
+                ImGui::TableSetColumnIndex(2);
+                ImGui::SetCursorPosY(ImGui::GetCursorPosY() + 4.f);
+                ImGui::PushStyleColor(ImGuiCol_Button,
+                    v.isLatest ? Col::Accent      : Col::BgCard);
+                ImGui::PushStyleColor(ImGuiCol_ButtonHovered,
+                    v.isLatest ? Col::AccentHover : ImVec4(0.25f, 0.25f, 0.32f, 1.f));
+                ImGui::PushStyleColor(ImGuiCol_ButtonActive,
+                    v.isLatest ? Col::AccentPress : Col::BgPanel);
+                ImGui::PushStyleVar(ImGuiStyleVar_FrameRounding, 5.f);
+                std::string btnId = "Installer##" + v.version;
+                if (ImGui::Button(btnId.c_str(), ImVec2(100.f, 26.f))) {
+                    auto plat = SynchronousDownloader::currentPlatform();
+                    m_install.open(v.version, m_installPath, plat.defaultFormat);
+                    m_fetcher.fetchReleases(v.version);
+                }
+                ImGui::PopStyleVar();
+                ImGui::PopStyleColor(3);
+            }
+            ImGui::EndTable();
+        }
+    }
 
     ImGui::EndChild();
     ImGui::PopStyleVar();
-    ImGui::PopStyleColor();
+    ImGui::PopStyleColor(5);
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -386,4 +487,282 @@ bool UIManager::navButton(const char* label, bool selected, float width)
     ImGui::PopStyleVar(2);
     ImGui::PopStyleColor(4);
     return clicked;
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Modale d'installation
+// ─────────────────────────────────────────────────────────────────────────────
+void UIManager::renderInstallModal()
+{
+    if (!m_install.visible) return;
+
+    // ── Vérifier si le téléchargement est terminé ─────────────────────────────
+    if (m_install.downloading && m_install.future.valid()) {
+        if (m_install.future.wait_for(std::chrono::seconds(0)) == std::future_status::ready) {
+            m_install.future.get();
+            m_install.downloading = false;
+        }
+    }
+
+    // ── Auto-sélection du patch le plus récent ────────────────────────────────
+    if (m_install.selectedPatch.empty() && m_fetcher.hasReleases(m_install.majorMinor)) {
+        auto releases = m_fetcher.getReleases(m_install.majorMinor);
+        if (!releases.empty())
+            m_install.selectedPatch = releases.back().fullVersion;
+    }
+
+    ImGuiIO& io = ImGui::GetIO();
+    ImGui::SetNextWindowPos(ImVec2(io.DisplaySize.x * 0.5f, io.DisplaySize.y * 0.5f),
+                            ImGuiCond_Always, ImVec2(0.5f, 0.5f));
+    ImGui::SetNextWindowSize(ImVec2(560.f, 0.f), ImGuiCond_Always);
+    ImGui::OpenPopup("##install_modal");
+
+    ImGui::PushStyleColor(ImGuiCol_PopupBg,    Col::BgPanel);
+    ImGui::PushStyleColor(ImGuiCol_ModalWindowDimBg, ImVec4(0.f, 0.f, 0.f, 0.55f));
+    ImGui::PushStyleVar  (ImGuiStyleVar_WindowPadding,  ImVec2(28.f, 24.f));
+    ImGui::PushStyleVar  (ImGuiStyleVar_WindowRounding, 12.f);
+
+    bool open = true;
+    if (ImGui::BeginPopupModal("##install_modal", &open,
+        ImGuiWindowFlags_NoTitleBar | ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoMove))
+    {
+        // ── Titre ──────────────────────────────────────────────────────────────
+        ImGui::PushStyleColor(ImGuiCol_Text, Col::Text);
+        ImGui::Text("Installer Blender %s", m_install.majorMinor.c_str());
+        ImGui::PopStyleColor();
+
+        ImGui::Spacing();
+        ImGui::PushStyleColor(ImGuiCol_Separator, Col::Separator);
+        ImGui::Separator();
+        ImGui::PopStyleColor();
+        ImGui::Spacing();
+
+        auto plat = SynchronousDownloader::currentPlatform();
+
+        // ── Plateforme détectée ────────────────────────────────────────────────
+        ImGui::PushStyleColor(ImGuiCol_Text, Col::TextDim);
+        const char* osLabel = (plat.os == PlatOS::Linux)   ? "Linux"
+                            : (plat.os == PlatOS::macOS)   ? "macOS"
+                            : (plat.os == PlatOS::Windows) ? "Windows"
+                            : "Inconnu";
+        const char* archLabel = (plat.arch == PlatArch::x64)   ? "x64"
+                              : (plat.arch == PlatArch::arm64) ? "arm64"
+                              : "?";
+        ImGui::Text("Plateforme detectee :"); ImGui::SameLine();
+        ImGui::PushStyleColor(ImGuiCol_Text, Col::Accent);
+        ImGui::Text("%s %s", osLabel, archLabel);
+        ImGui::PopStyleColor(2);
+        ImGui::Spacing();
+
+        // ── Sélection de la version patch ──────────────────────────────────────
+        ImGui::PushStyleColor(ImGuiCol_Text, Col::TextDim);
+        ImGui::Text("Version :");
+        ImGui::PopStyleColor();
+
+        ImGui::SetNextItemWidth(200.f);
+
+        bool relLoading = m_fetcher.isReleasesLoading(m_install.majorMinor);
+        bool relHas     = m_fetcher.hasReleases(m_install.majorMinor);
+        bool relFailed  = m_fetcher.releasesFailed(m_install.majorMinor);
+
+        if (relLoading) {
+            ImGui::BeginDisabled();
+            if (ImGui::BeginCombo("##patch", "Chargement..."))
+                ImGui::EndCombo();
+            ImGui::EndDisabled();
+        } else if (relFailed) {
+            ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.9f, 0.3f, 0.3f, 1.f));
+            ImGui::Text("Erreur de chargement des releases");
+            ImGui::PopStyleColor();
+        } else if (relHas) {
+            auto releases = m_fetcher.getReleases(m_install.majorMinor);
+            const char* preview = m_install.selectedPatch.empty()
+                                ? "Selectionner..." : m_install.selectedPatch.c_str();
+            if (ImGui::BeginCombo("##patch", preview)) {
+                // Du plus récent au plus ancien
+                for (int i = (int)releases.size() - 1; i >= 0; --i) {
+                    const auto& r = releases[i];
+                    std::string label = r.fullVersion;
+                    if (r.isLatestPatch) label += "  (derniere)";
+                    bool sel = (m_install.selectedPatch == r.fullVersion);
+                    if (ImGui::Selectable(label.c_str(), sel))
+                        m_install.selectedPatch = r.fullVersion;
+                    if (sel) ImGui::SetItemDefaultFocus();
+                }
+                ImGui::EndCombo();
+            }
+        }
+
+        ImGui::Spacing();
+
+        // ── Format d'archive ───────────────────────────────────────────────────
+        ImGui::PushStyleColor(ImGuiCol_Text, Col::TextDim);
+        ImGui::Text("Format :");
+        ImGui::PopStyleColor();
+
+        ImGui::SetNextItemWidth(280.f);
+        if (plat.os == PlatOS::Windows) {
+            // Sur Windows : choix entre zip, msi, msix
+            static const ArchiveFormat winFmts[] = {
+                ArchiveFormat::Zip, ArchiveFormat::MSI, ArchiveFormat::MSIX
+            };
+            if (ImGui::BeginCombo("##fmt",
+                    SynchronousDownloader::formatLabel(m_install.selectedFmt)))
+            {
+                for (auto f : winFmts) {
+                    bool sel = (m_install.selectedFmt == f);
+                    if (ImGui::Selectable(SynchronousDownloader::formatLabel(f), sel))
+                        m_install.selectedFmt = f;
+                    if (sel) ImGui::SetItemDefaultFocus();
+                }
+                ImGui::EndCombo();
+            }
+        } else {
+            // Linux / macOS : format unique, juste affiché
+            ImGui::PushStyleColor(ImGuiCol_Text, Col::Text);
+            ImGui::Text("%s", SynchronousDownloader::formatLabel(plat.defaultFormat));
+            ImGui::PopStyleColor();
+        }
+
+        ImGui::Spacing();
+
+        // ── Répertoire de destination ──────────────────────────────────────────
+        ImGui::PushStyleColor(ImGuiCol_Text, Col::TextDim);
+        ImGui::Text("Dossier de destination :");
+        ImGui::PopStyleColor();
+        ImGui::SetNextItemWidth(504.f);
+        ImGui::InputText("##outdir", m_install.outputDir, sizeof(m_install.outputDir));
+
+        ImGui::Spacing();
+        ImGui::Separator();
+        ImGui::Spacing();
+
+        // ── Zone progression / état ────────────────────────────────────────────
+        DownloadProgress prog;
+        {
+            std::lock_guard<std::mutex> lk(m_install.progressMutex);
+            prog = m_install.progress;
+        }
+
+        if (m_install.downloading) {
+            // Barre de progression
+            char progLabel[64];
+            snprintf(progLabel, sizeof(progLabel), "%.0f%%", prog.fraction() * 100.f);
+            ImGui::PushStyleColor(ImGuiCol_PlotHistogram, Col::Accent);
+            ImGui::ProgressBar(prog.fraction(), ImVec2(-1.f, 18.f), progLabel);
+            ImGui::PopStyleColor();
+
+            ImGui::PushStyleColor(ImGuiCol_Text, Col::TextDim);
+            std::string sizeStr = prog.humanSize();
+            ImGui::Text("%s", sizeStr.c_str());
+            ImGui::PopStyleColor();
+
+            ImGui::Spacing();
+
+            // Bouton Annuler
+            ImGui::PushStyleColor(ImGuiCol_Button,        ImVec4(0.55f, 0.18f, 0.18f, 1.f));
+            ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(0.70f, 0.22f, 0.22f, 1.f));
+            ImGui::PushStyleColor(ImGuiCol_ButtonActive,  ImVec4(0.40f, 0.12f, 0.12f, 1.f));
+            ImGui::PushStyleVar  (ImGuiStyleVar_FrameRounding, 6.f);
+            if (ImGui::Button("Annuler", ImVec2(120.f, 32.f)) && m_install.downloader)
+                m_install.downloader->cancel();
+            ImGui::PopStyleVar();
+            ImGui::PopStyleColor(3);
+
+        } else if (prog.done) {
+            // Succès
+            ImGui::PushStyleColor(ImGuiCol_Text, Col::Green);
+            ImGui::Text("\u2713 Telechargement termine !");
+            ImGui::PopStyleColor();
+            ImGui::PushStyleColor(ImGuiCol_Text, Col::TextHint);
+            ImGui::TextWrapped("%s", m_install.downloadedPath.c_str());
+            ImGui::PopStyleColor();
+            ImGui::Spacing();
+
+            ImGui::PushStyleColor(ImGuiCol_Button,        Col::BgCard);
+            ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(0.25f, 0.25f, 0.32f, 1.f));
+            ImGui::PushStyleColor(ImGuiCol_ButtonActive,  Col::BgPanel);
+            ImGui::PushStyleVar  (ImGuiStyleVar_FrameRounding, 6.f);
+            if (ImGui::Button("Fermer", ImVec2(100.f, 32.f))) {
+                m_install.visible = false;
+                ImGui::CloseCurrentPopup();
+            }
+            ImGui::PopStyleVar();
+            ImGui::PopStyleColor(3);
+
+        } else if (prog.failed) {
+            // Échec
+            ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.9f, 0.3f, 0.3f, 1.f));
+            ImGui::Text("\u2715 Echec du telechargement");
+            ImGui::PopStyleColor();
+            ImGui::PushStyleColor(ImGuiCol_Text, Col::TextHint);
+            ImGui::TextWrapped("%s", prog.error.c_str());
+            ImGui::PopStyleColor();
+            ImGui::Spacing();
+
+        } else {
+            // Boutons Télécharger / Annuler
+            bool canDownload = !m_install.selectedPatch.empty() && relHas;
+
+            if (!canDownload) ImGui::BeginDisabled();
+            ImGui::PushStyleColor(ImGuiCol_Button,        Col::Accent);
+            ImGui::PushStyleColor(ImGuiCol_ButtonHovered, Col::AccentHover);
+            ImGui::PushStyleColor(ImGuiCol_ButtonActive,  Col::AccentPress);
+            ImGui::PushStyleVar  (ImGuiStyleVar_FrameRounding, 6.f);
+            if (ImGui::Button("Telecharger", ImVec2(140.f, 32.f))) {
+                std::string filename = SynchronousDownloader::buildFilename(
+                    m_install.selectedPatch, plat.os, plat.arch, m_install.selectedFmt);
+                std::string url = SynchronousDownloader::buildUrl(
+                    m_install.majorMinor, filename);
+                std::string outDir = m_install.outputDir;
+
+                m_install.downloading = true;
+                m_install.progress    = {};
+                m_install.downloader  = std::make_unique<SynchronousDownloader>();
+
+                SynchronousDownloader* dlPtr = m_install.downloader.get();
+                m_install.future = std::async(std::launch::async,
+                    [this, dlPtr, url, outDir]()
+                    {
+                        auto cb = [this](const DownloadProgress& p) {
+                            std::lock_guard<std::mutex> lk(m_install.progressMutex);
+                            m_install.progress = p;
+                        };
+                        std::string result = dlPtr->download(url, outDir, cb);
+
+                        std::lock_guard<std::mutex> lk(m_install.progressMutex);
+                        if (!result.empty()) {
+                            m_install.progress.done  = true;
+                            m_install.downloadedPath = result;
+                        } else if (!dlPtr->isCancelled()) {
+                            m_install.progress.failed = true;
+                            m_install.progress.error  = "Telechargement echoue.";
+                        }
+                    });
+            }
+            ImGui::PopStyleVar();
+            ImGui::PopStyleColor(3);
+            if (!canDownload) ImGui::EndDisabled();
+
+            ImGui::SameLine(0.f, 12.f);
+
+            ImGui::PushStyleColor(ImGuiCol_Button,        Col::BgCard);
+            ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(0.25f, 0.25f, 0.32f, 1.f));
+            ImGui::PushStyleColor(ImGuiCol_ButtonActive,  Col::BgPanel);
+            ImGui::PushStyleVar  (ImGuiStyleVar_FrameRounding, 6.f);
+            if (ImGui::Button("Annuler##close", ImVec2(100.f, 32.f))) {
+                m_install.visible = false;
+                ImGui::CloseCurrentPopup();
+            }
+            ImGui::PopStyleVar();
+            ImGui::PopStyleColor(3);
+        }
+
+        ImGui::EndPopup();
+    }
+
+    ImGui::PopStyleVar(2);
+    ImGui::PopStyleColor(2);
+
+    if (!open) m_install.visible = false;
 }
