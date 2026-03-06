@@ -50,6 +50,7 @@ private:
 
     // ── Modale installation ───────────────────────────────────────────────────
     void renderInstallModal();
+    void renderDeleteConfirmModal();
 
     // ── Versions installées ───────────────────────────────────────────────────
     void scanInstalledVersions();
@@ -69,6 +70,13 @@ private:
     // ── Versions installées (cache, rescané quand dirty) ──────────────────────
     std::vector<InstalledVersion> m_installedVersions;
     bool                          m_installedDirty = true;
+
+    // ── Confirmation suppression ───────────────────────────────────────────────
+    struct DeleteConfirm {
+        bool        visible  = false;
+        std::string dirName;
+        std::string fullPath;
+    } m_deleteConfirm;
 
     // ── État installation ─────────────────────────────────────────────────────
     struct InstallState {

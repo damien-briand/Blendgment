@@ -64,6 +64,7 @@ void UIManager::render()
     ImGui::End();
 
     renderInstallModal();
+    renderDeleteConfirmModal();
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -244,15 +245,16 @@ void UIManager::pageDashboard()
             ImGui::Text("Blender %s", v.version.c_str());
             ImGui::PopStyleColor();
 
-            // ── Répertoire + bouton Lancer sur la même ligne ─────────────────
+            // ── Répertoire + boutons sur la même ligne ───────────────────────
             ImGui::SetCursorPosX(16.f);
             ImGui::PushStyleColor(ImGuiCol_Text, Col::TextHint);
             std::string displayDir = v.dirName;
-            if (displayDir.size() > 48) displayDir = displayDir.substr(0, 45) + "...";
+            if (displayDir.size() > 42) displayDir = displayDir.substr(0, 39) + "...";
             ImGui::Text("%s", displayDir.c_str());
             ImGui::PopStyleColor();
 
-            ImGui::SameLine(listW - 116.f);
+            // Bouton Lancer
+            ImGui::SameLine(listW - 228.f);
             if (!canLaunch) ImGui::BeginDisabled();
             ImGui::PushStyleColor(ImGuiCol_Button,        Col::Accent);
             ImGui::PushStyleColor(ImGuiCol_ButtonHovered, Col::AccentHover);
@@ -264,6 +266,21 @@ void UIManager::pageDashboard()
             ImGui::PopStyleVar();
             ImGui::PopStyleColor(3);
             if (!canLaunch) ImGui::EndDisabled();
+
+            // Bouton Supprimer
+            ImGui::SameLine(listW - 116.f);
+            ImGui::PushStyleColor(ImGuiCol_Button,        ImVec4(0.55f, 0.15f, 0.15f, 1.f));
+            ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(0.75f, 0.20f, 0.20f, 1.f));
+            ImGui::PushStyleColor(ImGuiCol_ButtonActive,  ImVec4(0.40f, 0.10f, 0.10f, 1.f));
+            ImGui::PushStyleVar  (ImGuiStyleVar_FrameRounding, 6.f);
+            std::string delId = "  Suppr.##del_" + v.dirName;
+            if (ImGui::Button(delId.c_str(), ImVec2(100.f, 26.f))) {
+                m_deleteConfirm.visible  = true;
+                m_deleteConfirm.dirName  = v.dirName;
+                m_deleteConfirm.fullPath = v.fullPath;
+            }
+            ImGui::PopStyleVar();
+            ImGui::PopStyleColor(3);
 
             // ── Séparateur ───────────────────────────────────────────────────
             ImGui::Spacing();
@@ -976,4 +993,113 @@ void UIManager::renderInstallModal()
     ImGui::PopStyleColor(2);
 
     if (!open) m_install.visible = false;
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Modale de confirmation de suppression
+// ─────────────────────────────────────────────────────────────────────────────
+void UIManager::renderDeleteConfirmModal()
+{
+    if (!m_deleteConfirm.visible) return;
+
+    ImGuiIO& io = ImGui::GetIO();
+    ImGui::SetNextWindowPos(ImVec2(io.DisplaySize.x * 0.5f, io.DisplaySize.y * 0.5f),
+                            ImGuiCond_Always, ImVec2(0.5f, 0.5f));
+    ImGui::SetNextWindowSize(ImVec2(480.f, 0.f), ImGuiCond_Always);
+    ImGui::OpenPopup("##delete_confirm");
+
+    ImGui::PushStyleColor(ImGuiCol_PopupBg,          Col::BgPanel);
+    ImGui::PushStyleColor(ImGuiCol_ModalWindowDimBg, ImVec4(0.f, 0.f, 0.f, 0.55f));
+    ImGui::PushStyleVar  (ImGuiStyleVar_WindowPadding,  ImVec2(28.f, 24.f));
+    ImGui::PushStyleVar  (ImGuiStyleVar_WindowRounding, 12.f);
+
+    bool open = true;
+    if (ImGui::BeginPopupModal("##delete_confirm", &open,
+        ImGuiWindowFlags_NoTitleBar | ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoMove))
+    {
+        // ── Titre ──────────────────────────────────────────────────────────────
+        ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.90f, 0.30f, 0.30f, 1.f));
+        ImGui::Text("Supprimer Blender");
+        ImGui::PopStyleColor();
+
+        ImGui::Spacing();
+        ImGui::PushStyleColor(ImGuiCol_Separator, Col::Separator);
+        ImGui::Separator();
+        ImGui::PopStyleColor();
+        ImGui::Spacing();
+
+        // ── Message ─────────────────────────────────────────────────────────────
+        ImGui::PushStyleColor(ImGuiCol_Text, Col::TextDim);
+        ImGui::TextWrapped("Vous allez supprimer definitivement le dossier :");
+        ImGui::PopStyleColor();
+
+        ImGui::Spacing();
+        ImGui::SetCursorPosX(12.f);
+        ImGui::PushStyleColor(ImGuiCol_ChildBg, Col::BgCard);
+        ImGui::PushStyleVar  (ImGuiStyleVar_ChildRounding, 6.f);
+        ImGui::BeginChild("##del_path", ImVec2(ImGui::GetContentRegionAvail().x, 36.f), false);
+        ImGui::SetCursorPos({10.f, 8.f});
+        ImGui::PushStyleColor(ImGuiCol_Text, Col::Text);
+        std::string disp = m_deleteConfirm.dirName;
+        if (disp.size() > 52) disp = disp.substr(0, 49) + "...";
+        ImGui::Text("%s", disp.c_str());
+        ImGui::PopStyleColor();
+        ImGui::EndChild();
+        ImGui::PopStyleVar();
+        ImGui::PopStyleColor();
+
+        ImGui::Spacing();
+        ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.85f, 0.35f, 0.35f, 1.f));
+        ImGui::TextWrapped("Cette action est irreversible.");
+        ImGui::PopStyleColor();
+
+        ImGui::Spacing(); ImGui::Spacing();
+        ImGui::PushStyleColor(ImGuiCol_Separator, Col::Separator);
+        ImGui::Separator();
+        ImGui::PopStyleColor();
+        ImGui::Spacing();
+
+        // ── Boutons ─────────────────────────────────────────────────────────────
+        float btnW = 120.f;
+        float spacing = 12.f;
+        float totalW  = btnW * 2.f + spacing;
+        ImGui::SetCursorPosX((ImGui::GetContentRegionAvail().x - totalW) * 0.5f);
+
+        // Confirmer
+        ImGui::PushStyleColor(ImGuiCol_Button,        ImVec4(0.60f, 0.15f, 0.15f, 1.f));
+        ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(0.78f, 0.20f, 0.20f, 1.f));
+        ImGui::PushStyleColor(ImGuiCol_ButtonActive,  ImVec4(0.42f, 0.10f, 0.10f, 1.f));
+        ImGui::PushStyleVar  (ImGuiStyleVar_FrameRounding, 6.f);
+        if (ImGui::Button("  Supprimer", ImVec2(btnW, 34.f))) {
+            std::error_code ec;
+            std::filesystem::remove_all(m_deleteConfirm.fullPath, ec);
+            m_installedDirty    = true;
+            m_deleteConfirm.visible = false;
+            ImGui::CloseCurrentPopup();
+        }
+        ImGui::PopStyleVar();
+        ImGui::PopStyleColor(3);
+
+        ImGui::SameLine(0.f, spacing);
+
+        // Annuler
+        ImGui::PushStyleColor(ImGuiCol_Button,        Col::BgCard);
+        ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(0.25f, 0.25f, 0.32f, 1.f));
+        ImGui::PushStyleColor(ImGuiCol_ButtonActive,  Col::BgPanel);
+        ImGui::PushStyleVar  (ImGuiStyleVar_FrameRounding, 6.f);
+        if (ImGui::Button("  Annuler##delcancel", ImVec2(btnW, 34.f))) {
+            m_deleteConfirm.visible = false;
+            ImGui::CloseCurrentPopup();
+        }
+        ImGui::PopStyleVar();
+        ImGui::PopStyleColor(3);
+
+        ImGui::Spacing();
+        ImGui::EndPopup();
+    }
+
+    ImGui::PopStyleVar(2);
+    ImGui::PopStyleColor(2);
+
+    if (!open) m_deleteConfirm.visible = false;
 }
