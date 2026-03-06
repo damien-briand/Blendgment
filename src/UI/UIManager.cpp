@@ -4,6 +4,8 @@
 #include <cmath>
 #include <chrono>
 #include <filesystem>
+#include <algorithm>
+#include <cstdlib>
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Palette de couleurs (thème sombre inspiré de Blender)
@@ -172,6 +174,11 @@ void UIManager::renderMainContent(float x, float y, float w, float h)
 // ─────────────────────────────────────────────────────────────────────────────
 void UIManager::pageDashboard()
 {
+    // ── Rescan si le répertoire a changé ou après une installation ────────────
+    if (m_installedDirty) scanInstalledVersions();
+
+    int installedCount = (int)m_installedVersions.size();
+
     ImGui::SetCursorPos({28.f, 28.f});
     ImGui::PushStyleColor(ImGuiCol_Text, Col::Text);
     ImGui::Text("Dashboard");
@@ -184,9 +191,16 @@ void UIManager::pageDashboard()
 
     // ── Cartes de statistiques ────────────────────────────────────────────────
     ImGui::SetCursorPos({28.f, 108.f});
-    statCard("##c1", "Versions installees", "0", "Aucune version",     Col::Accent);
+    {
+        char countStr[8];
+        snprintf(countStr, sizeof(countStr), "%d", installedCount);
+        const char* sub = installedCount == 0 ? "Aucune version"
+                        : installedCount == 1 ? "version installee"
+                        :                       "versions installees";
+        statCard("##c1", "Versions installees", countStr, sub, Col::Accent);
+    }
     ImGui::SameLine(0.f, 14.f);
-    statCard("##c2", "Projets",             "0", "Aucun projet",       Col::Blue);
+    statCard("##c2", "Projets", "0", "Aucun projet", Col::Blue);
     ImGui::SameLine(0.f, 14.f);
     {
         std::string latestVal = m_fetcher.hasData() ? m_fetcher.getLatestVersion() : "...";
@@ -196,23 +210,131 @@ void UIManager::pageDashboard()
         statCard("##c3", "Derniere version", latestVal.c_str(), latestSub, Col::Green);
     }
 
-    // ── Activité récente ──────────────────────────────────────────────────────
+    // ── Liste des versions installées ─────────────────────────────────────────
     ImGui::SetCursorPos({28.f, 230.f});
     ImGui::PushStyleColor(ImGuiCol_Text, Col::TextDim);
-    ImGui::Text("Activite recente");
+    ImGui::Text("Versions installees");
     ImGui::PopStyleColor();
 
     ImGui::SetCursorPos({28.f, 256.f});
     ImGui::PushStyleColor(ImGuiCol_ChildBg, Col::BgPanel);
     ImGui::PushStyleVar(ImGuiStyleVar_ChildRounding, 8.f);
-    ImGui::BeginChild("##activity", ImVec2(560.f, 100.f), false);
-    ImGui::SetCursorPos({16.f, 32.f});
-    ImGui::PushStyleColor(ImGuiCol_Text, Col::TextHint);
-    ImGui::Text("Aucune activite pour le moment.");
-    ImGui::PopStyleColor();
+
+    float panelH = installedCount == 0 ? 68.f
+                 : std::min(installedCount * 66.f + 16.f, 320.f);
+    ImGui::BeginChild("##installed_panel", ImVec2(620.f, panelH), false);
+
+    if (m_installedVersions.empty()) {
+        ImGui::Spacing(); ImGui::Spacing();
+        ImGui::SetCursorPosX(16.f);
+        ImGui::PushStyleColor(ImGuiCol_Text, Col::TextHint);
+        ImGui::Text("Aucune version installee. Rendez-vous sur la page Versions pour en installer une.");
+        ImGui::PopStyleColor();
+    } else {
+        float listW = ImGui::GetContentRegionAvail().x;
+        ImGui::Spacing();
+
+        for (size_t i = 0; i < m_installedVersions.size(); ++i) {
+            const auto& v = m_installedVersions[i];
+            bool canLaunch = !v.executable.empty();
+
+            // ── Nom de version ───────────────────────────────────────────────
+            ImGui::SetCursorPosX(16.f);
+            ImGui::PushStyleColor(ImGuiCol_Text, Col::Text);
+            ImGui::Text("Blender %s", v.version.c_str());
+            ImGui::PopStyleColor();
+
+            // ── Répertoire + bouton Lancer sur la même ligne ─────────────────
+            ImGui::SetCursorPosX(16.f);
+            ImGui::PushStyleColor(ImGuiCol_Text, Col::TextHint);
+            std::string displayDir = v.dirName;
+            if (displayDir.size() > 48) displayDir = displayDir.substr(0, 45) + "...";
+            ImGui::Text("%s", displayDir.c_str());
+            ImGui::PopStyleColor();
+
+            ImGui::SameLine(listW - 116.f);
+            if (!canLaunch) ImGui::BeginDisabled();
+            ImGui::PushStyleColor(ImGuiCol_Button,        Col::Accent);
+            ImGui::PushStyleColor(ImGuiCol_ButtonHovered, Col::AccentHover);
+            ImGui::PushStyleColor(ImGuiCol_ButtonActive,  Col::AccentPress);
+            ImGui::PushStyleVar  (ImGuiStyleVar_FrameRounding, 6.f);
+            std::string btnId = "  Lancer##lnch_" + v.dirName;
+            if (ImGui::Button(btnId.c_str(), ImVec2(100.f, 26.f)))
+                launchBlender(v);
+            ImGui::PopStyleVar();
+            ImGui::PopStyleColor(3);
+            if (!canLaunch) ImGui::EndDisabled();
+
+            // ── Séparateur ───────────────────────────────────────────────────
+            ImGui::Spacing();
+            if (i + 1 < m_installedVersions.size()) {
+                ImGui::PushStyleColor(ImGuiCol_Separator, Col::Separator);
+                ImGui::Separator();
+                ImGui::PopStyleColor();
+                ImGui::Spacing();
+            }
+        }
+    }
+
     ImGui::EndChild();
     ImGui::PopStyleVar();
     ImGui::PopStyleColor();
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Scan du répertoire d'installation pour détecter les versions installées
+// ─────────────────────────────────────────────────────────────────────────────
+void UIManager::scanInstalledVersions()
+{
+    namespace fs = std::filesystem;
+    m_installedVersions.clear();
+    m_installedDirty = false;
+
+    std::error_code ec;
+    fs::path base = fs::weakly_canonical(fs::absolute(m_installPath), ec);
+    if (!fs::is_directory(base, ec)) return;
+
+    for (auto& entry : fs::directory_iterator(base, ec)) {
+        if (!entry.is_directory(ec)) continue;
+        std::string name = entry.path().filename().string();
+        // Correspond à "blender-X.Y.Z" ou "blender-X.Y.Z-platform-arch"
+        if (name.rfind("blender-", 0) != 0) continue;
+
+        // Extraire le numéro de version : après "blender-" jusqu'au "-" suivant
+        std::string rest    = name.substr(8);
+        std::string version = rest.substr(0, rest.find('-'));
+        if (version.empty()) continue;
+
+        // Chercher l'exécutable
+        fs::path exePath = entry.path() / "blender";
+#ifdef _WIN32
+        exePath = entry.path() / "blender.exe";
+#endif
+        std::string exeStr = fs::exists(exePath, ec) ? exePath.string() : "";
+
+        m_installedVersions.push_back({name, version, entry.path().string(), exeStr});
+    }
+
+    // Tri décroissant (version la plus récente en premier)
+    std::sort(m_installedVersions.begin(), m_installedVersions.end(),
+        [](const InstalledVersion& a, const InstalledVersion& b) {
+            return a.version > b.version;
+        });
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Lancement de Blender en arrière-plan
+// ─────────────────────────────────────────────────────────────────────────────
+void UIManager::launchBlender(const InstalledVersion& v)
+{
+    if (v.executable.empty()) return;
+#ifdef _WIN32
+    std::string cmd = "start \"\" \"" + v.executable + "\"";
+    std::system(cmd.c_str());
+#else
+    std::string cmd = "\"" + v.executable + "\" &";
+    std::system(cmd.c_str());
+#endif
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -821,6 +943,7 @@ void UIManager::renderInstallModal()
 
                                 m_install.extractProgress.done = true;
                                 m_install.extractedDir         = extracted;
+                                m_installedDirty               = true; // forcer un rescan du dashboard
                             } else if (!extPtr->isCancelled()) {
                                 m_install.extractProgress.failed = true;
                                 m_install.extractProgress.error  = "Extraction echouee.";

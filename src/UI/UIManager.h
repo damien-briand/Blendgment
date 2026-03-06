@@ -2,12 +2,23 @@
 
 #include <imgui.h>
 #include <string>
+#include <vector>
 #include <mutex>
 #include <future>
 #include <memory>
 #include "services/BlenderFetcher.h"
 #include "utils/SynchronousDownloader.h"
 #include "utils/Extractor.h"
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Version Blender détectée dans le répertoire d'installation
+// ─────────────────────────────────────────────────────────────────────────────
+struct InstalledVersion {
+    std::string dirName;    // "blender-4.4.3-linux-x64"
+    std::string version;   // "4.4.3"
+    std::string fullPath;  // chemin absolu du répertoire
+    std::string executable;// chemin absolu de l'exécutable (vide si absent)
+};
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Pages de navigation
@@ -40,6 +51,10 @@ private:
     // ── Modale installation ───────────────────────────────────────────────────
     void renderInstallModal();
 
+    // ── Versions installées ───────────────────────────────────────────────────
+    void scanInstalledVersions();
+    void launchBlender(const InstalledVersion& v);
+
     // ── Widgets réutilisables ─────────────────────────────────────────────────
     void statCard(const char* id, const char* title,
                   const char* value, const char* sub, ImVec4 accent);
@@ -50,6 +65,10 @@ private:
     BlenderFetcher m_fetcher;
     bool           m_fetchTriggered = false;
     bool           m_showRecentOnly = true;
+
+    // ── Versions installées (cache, rescané quand dirty) ──────────────────────
+    std::vector<InstalledVersion> m_installedVersions;
+    bool                          m_installedDirty = true;
 
     // ── État installation ─────────────────────────────────────────────────────
     struct InstallState {
