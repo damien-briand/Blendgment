@@ -49,6 +49,18 @@ set(SOURCES
     src/Application.cpp
     src/VulkanContext.cpp
     src/UI/UIManager.cpp
+    src/UI/InstalledVersion.cpp
+)
+set(UI_PAGES
+    src/UI/pages/DashboardPage.cpp
+    src/UI/pages/VersionsPage.cpp
+    src/UI/pages/ProjectsPage.cpp
+    src/UI/pages/SettingsPage.cpp
+)
+set(UI_MODALS
+    src/UI/modals/InstallModal.cpp
+    src/UI/modals/DeleteModal.cpp
+    src/UI/modals/NewProjectModal.cpp
 )
 set(CORE
     src/core/Window.cpp
@@ -68,7 +80,7 @@ set(UTILS
 )
 
 add_executable(${PROJECT_NAME}
-    ${SOURCES} ${CORE} ${RENDERING} ${SERVICES} ${UTILS}
+    ${SOURCES} ${UI_PAGES} ${UI_MODALS} ${CORE} ${RENDERING} ${SERVICES} ${UTILS}
 )
 
 target_include_directories(${PROJECT_NAME} PRIVATE
