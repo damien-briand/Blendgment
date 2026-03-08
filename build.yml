@@ -1,0 +1,88 @@
+name: Build
+
+on:
+  push:
+    branches: [ main, master ]
+  pull_request:
+    branches: [ main, master ]
+  workflow_dispatch:
+
+jobs:
+  # ── Linux ───────────────────────────────────────────────────────────────────
+  build-linux:
+    name: Linux (Ubuntu)
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Installer les dépendances
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y \
+            build-essential cmake ninja-build \
+            libvulkan-dev vulkan-tools vulkan-validationlayers-dev glslang-tools \
+            libglfw3-dev libcurl4-openssl-dev libarchive-dev
+
+      - name: Configurer CMake
+        run: cmake -B build -G Ninja -DCMAKE_BUILD_TYPE=Release
+
+      - name: Compiler
+        run: cmake --build build --parallel
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: Blendgment-linux-x64
+          path: build/Blendgment
+          if-no-files-found: error
+
+  # ── Windows ─────────────────────────────────────────────────────────────────
+  build-windows:
+    name: Windows (MSVC)
+    runs-on: windows-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Installer le Vulkan SDK
+        uses: jakoch/install-vulkan-sdk-action@v1
+        with:
+          vulkan_version: latest
+          cache: true
+
+      - name: Installer les dépendances via vcpkg
+        run: |
+          vcpkg install glfw3:x64-windows curl:x64-windows libarchive:x64-windows
+          vcpkg integrate install
+        env:
+          VCPKG_DEFAULT_TRIPLET: x64-windows
+
+      - name: Configurer CMake
+        run: |
+          cmake -B build -G "Ninja" `
+            -DCMAKE_BUILD_TYPE=Release `
+            -DCMAKE_TOOLCHAIN_FILE="$env:VCPKG_INSTALLATION_ROOT/scripts/buildsystems/vcpkg.cmake"
+
+      - name: Compiler
+        run: cmake --build build --parallel
+
+      - name: Collecter les DLLs
+        run: |
+          $dllDir = "$env:VCPKG_INSTALLATION_ROOT\installed\x64-windows\bin"
+          $needed = @("glfw3.dll","libcurl.dll","archive.dll","zlib1.dll","zstd.dll","liblzma.dll","lz4.dll","bz2.dll")
+          foreach ($dll in $needed) {
+            $src = Join-Path $dllDir $dll
+            if (Test-Path $src) { Copy-Item $src build\ }
+          }
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: Blendgment-windows-x64
+          path: |
+            build/Blendgment.exe
+            build/*.dll
+          if-no-files-found: error
