@@ -6,14 +6,16 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 
 if(NOT CMAKE_BUILD_TYPE)
-    set(CMAKE_BUILD_TYPE Debug)
+    set(CMAKE_BUILD_TYPE Release)
 endif()
 
-# ── Dependencies ──────────────────────────────────────────────────────────────
+# -- Dependencies -------------------------------------------------------------
 find_package(Vulkan REQUIRED)
 find_package(glfw3 3.3 REQUIRED)
+find_package(CURL   REQUIRED)
+find_package(LibArchive REQUIRED)
 
-# ── ImGUI via FetchContent ────────────────────────────────────────────────────
+# -- ImGUI via FetchContent ---------------------------------------------------
 include(FetchContent)
 
 FetchContent_Declare(
@@ -41,16 +43,33 @@ target_include_directories(imgui_lib PUBLIC
 )
 target_link_libraries(imgui_lib PUBLIC Vulkan::Vulkan glfw)
 
-# ── Project sources ───────────────────────────────────────────────────────────
+# -- Project sources ----------------------------------------------------------
 set(SOURCES
     src/main.cpp
     src/Application.cpp
     src/VulkanContext.cpp
-    src/Window.cpp
     src/UI/UIManager.cpp
 )
+set(CORE
+    src/core/Window.cpp
+    src/core/Instance.cpp
+    src/core/Device.cpp
+)
+set(RENDERING
+    src/rendering/SwapChain.cpp
+    src/rendering/Renderer.cpp
+)
+set(SERVICES
+    src/services/BlenderFetcher.cpp
+)
+set(UTILS
+    src/utils/SynchronousDownloader.cpp
+    src/utils/Extractor.cpp
+)
 
-add_executable(${PROJECT_NAME} ${SOURCES})
+add_executable(${PROJECT_NAME}
+    ${SOURCES} ${CORE} ${RENDERING} ${SERVICES} ${UTILS}
+)
 
 target_include_directories(${PROJECT_NAME} PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/src
@@ -63,14 +82,38 @@ target_link_libraries(${PROJECT_NAME} PRIVATE
     imgui_lib
     Vulkan::Vulkan
     glfw
+    CURL::libcurl
+    LibArchive::LibArchive
 )
 
-# ── Compiler flags ────────────────────────────────────────────────────────────
+# -- Definitions Windows ------------------------------------------------------
+if(WIN32)
+    target_compile_definitions(${PROJECT_NAME} PRIVATE
+        _CRT_SECURE_NO_WARNINGS
+        NOMINMAX
+        WIN32_LEAN_AND_MEAN
+    )
+    # Copie automatique des DLLs vcpkg a cote de l'executable
+    add_custom_command(TARGET ${PROJECT_NAME} POST_BUILD
+        COMMAND ${CMAKE_COMMAND} -E copy_if_different
+            $<TARGET_RUNTIME_DLLS:${PROJECT_NAME}>
+            $<TARGET_FILE_DIR:${PROJECT_NAME}>
+        COMMAND_EXPAND_LISTS
+    )
+endif()
+
+# -- Flags de compilation -----------------------------------------------------
 target_compile_options(${PROJECT_NAME} PRIVATE
+    # GCC / Clang
     $<$<CXX_COMPILER_ID:GNU,Clang>:-Wall -Wextra>
-    $<$<CONFIG:Debug>:  -g -O0>
-    $<$<CONFIG:Release>:-O2 -DNDEBUG>
+    $<$<AND:$<CXX_COMPILER_ID:GNU,Clang>,$<CONFIG:Debug>>:   -g -O0>
+    $<$<AND:$<CXX_COMPILER_ID:GNU,Clang>,$<CONFIG:Release>>: -O2 -DNDEBUG>
+    # MSVC
+    $<$<CXX_COMPILER_ID:MSVC>:/W3 /wd4996 /utf-8>
+    $<$<AND:$<CXX_COMPILER_ID:MSVC>,$<CONFIG:Debug>>:   /Od /Zi>
+    $<$<AND:$<CXX_COMPILER_ID:MSVC>,$<CONFIG:Release>>: /O2 /DNDEBUG>
 )
 
 message(STATUS "Vulkan found : ${Vulkan_VERSION}")
 message(STATUS "Build type   : ${CMAKE_BUILD_TYPE}")
+message(STATUS "Platform     : ${CMAKE_SYSTEM_NAME}")
