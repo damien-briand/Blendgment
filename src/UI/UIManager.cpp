@@ -357,6 +357,24 @@ void UIManager::launchBlender(const InstalledVersion& v)
 // ─────────────────────────────────────────────────────────────────────────────
 void UIManager::pageVersions()
 {
+    // Rescan si nécessaire (au cas où on arrive ici sans passer par le dashboard)
+    if (m_installedDirty) scanInstalledVersions();
+
+    // Lambda : vérifie si une version major.minor ("4.4") est déjà installée
+    auto isInstalled = [&](const std::string& mm) -> bool {
+        std::string prefix = mm + ".";
+        for (const auto& iv : m_installedVersions)
+            if (iv.version.rfind(prefix, 0) == 0) return true;
+        return false;
+    };
+    // Lambda : retourne le patch installé pour un major.minor donné ("4.4.3")
+    auto installedPatch = [&](const std::string& mm) -> std::string {
+        std::string prefix = mm + ".";
+        for (const auto& iv : m_installedVersions)
+            if (iv.version.rfind(prefix, 0) == 0) return iv.version;
+        return "";
+    };
+
     bool        loading  = m_fetcher.isLoading();
     bool        failed   = m_fetcher.hasFailed();
     bool        hasData  = m_fetcher.hasData();
@@ -460,7 +478,12 @@ void UIManager::pageVersions()
 
                 ImGui::TableSetColumnIndex(1);
                 ImGui::SetCursorPosY(ImGui::GetCursorPosY() + 6.f);
-                if (v.isLatest) {
+                std::string patch = installedPatch(v.version);
+                if (!patch.empty()) {
+                    ImGui::PushStyleColor(ImGuiCol_Text, Col::Green);
+                    ImGui::Text("  Installee (%s)", patch.c_str());
+                    ImGui::PopStyleColor();
+                } else if (v.isLatest) {
                     ImGui::PushStyleColor(ImGuiCol_Text, Col::Green);
                     ImGui::Text("Derniere version");
                     ImGui::PopStyleColor();
@@ -472,21 +495,38 @@ void UIManager::pageVersions()
 
                 ImGui::TableSetColumnIndex(2);
                 ImGui::SetCursorPosY(ImGui::GetCursorPosY() + 4.f);
-                ImGui::PushStyleColor(ImGuiCol_Button,
-                    v.isLatest ? Col::Accent      : Col::BgCard);
-                ImGui::PushStyleColor(ImGuiCol_ButtonHovered,
-                    v.isLatest ? Col::AccentHover : ImVec4(0.25f, 0.25f, 0.32f, 1.f));
-                ImGui::PushStyleColor(ImGuiCol_ButtonActive,
-                    v.isLatest ? Col::AccentPress : Col::BgPanel);
-                ImGui::PushStyleVar(ImGuiStyleVar_FrameRounding, 5.f);
-                std::string btnId = "Installer##" + v.version;
-                if (ImGui::Button(btnId.c_str(), ImVec2(100.f, 26.f))) {
-                    auto plat = SynchronousDownloader::currentPlatform();
-                    m_install.open(v.version, m_installPath, plat.defaultFormat);
-                    m_fetcher.fetchReleases(v.version);
+
+                bool alreadyInstalled = !patch.empty();
+                if (alreadyInstalled) {
+                    // Version déjà installée : badge gris non cliquable
+                    ImGui::PushStyleColor(ImGuiCol_Button,        ImVec4(0.20f, 0.38f, 0.22f, 0.55f));
+                    ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(0.20f, 0.38f, 0.22f, 0.55f));
+                    ImGui::PushStyleColor(ImGuiCol_ButtonActive,  ImVec4(0.20f, 0.38f, 0.22f, 0.55f));
+                    ImGui::PushStyleColor(ImGuiCol_Text,          Col::Green);
+                    ImGui::PushStyleVar(ImGuiStyleVar_FrameRounding, 5.f);
+                    ImGui::BeginDisabled();
+                    std::string badgeId = "  Installee##badge_" + v.version;
+                    ImGui::Button(badgeId.c_str(), ImVec2(100.f, 26.f));
+                    ImGui::EndDisabled();
+                    ImGui::PopStyleVar();
+                    ImGui::PopStyleColor(4);
+                } else {
+                    ImGui::PushStyleColor(ImGuiCol_Button,
+                        v.isLatest ? Col::Accent      : Col::BgCard);
+                    ImGui::PushStyleColor(ImGuiCol_ButtonHovered,
+                        v.isLatest ? Col::AccentHover : ImVec4(0.25f, 0.25f, 0.32f, 1.f));
+                    ImGui::PushStyleColor(ImGuiCol_ButtonActive,
+                        v.isLatest ? Col::AccentPress : Col::BgPanel);
+                    ImGui::PushStyleVar(ImGuiStyleVar_FrameRounding, 5.f);
+                    std::string btnId = "Installer##" + v.version;
+                    if (ImGui::Button(btnId.c_str(), ImVec2(100.f, 26.f))) {
+                        auto plat = SynchronousDownloader::currentPlatform();
+                        m_install.open(v.version, m_installPath, plat.defaultFormat);
+                        m_fetcher.fetchReleases(v.version);
+                    }
+                    ImGui::PopStyleVar();
+                    ImGui::PopStyleColor(3);
                 }
-                ImGui::PopStyleVar();
-                ImGui::PopStyleColor(3);
             }
             ImGui::EndTable();
         }
