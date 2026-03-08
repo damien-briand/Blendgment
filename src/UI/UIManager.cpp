@@ -1,7 +1,11 @@
 #include "UIManager.h"
 #include <imgui.h>
 #include <cstdio>
+#include <cmath>
 #include <chrono>
+#include <filesystem>
+#include <algorithm>
+#include <cstdlib>
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Palette de couleurs (thème sombre inspiré de Blender)
@@ -60,6 +64,7 @@ void UIManager::render()
     ImGui::End();
 
     renderInstallModal();
+    renderDeleteConfirmModal();
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -83,7 +88,7 @@ void UIManager::renderTopBar(float barH)
     ImGui::SameLine(0.f, 8.f);
     ImGui::SetCursorPosY(15.f);
     ImGui::PushStyleColor(ImGuiCol_Text, Col::TextHint);
-    ImGui::Text("v0.1.0");
+    ImGui::Text("v0.2.0");
     ImGui::PopStyleColor();
 
     // ── Indicateur de statut (placeholder) ────────────────────────────────────
@@ -170,6 +175,11 @@ void UIManager::renderMainContent(float x, float y, float w, float h)
 // ─────────────────────────────────────────────────────────────────────────────
 void UIManager::pageDashboard()
 {
+    // ── Rescan si le répertoire a changé ou après une installation ────────────
+    if (m_installedDirty) scanInstalledVersions();
+
+    int installedCount = (int)m_installedVersions.size();
+
     ImGui::SetCursorPos({28.f, 28.f});
     ImGui::PushStyleColor(ImGuiCol_Text, Col::Text);
     ImGui::Text("Dashboard");
@@ -182,9 +192,16 @@ void UIManager::pageDashboard()
 
     // ── Cartes de statistiques ────────────────────────────────────────────────
     ImGui::SetCursorPos({28.f, 108.f});
-    statCard("##c1", "Versions installees", "0", "Aucune version",     Col::Accent);
+    {
+        char countStr[8];
+        snprintf(countStr, sizeof(countStr), "%d", installedCount);
+        const char* sub = installedCount == 0 ? "Aucune version"
+                        : installedCount == 1 ? "version installee"
+                        :                       "versions installees";
+        statCard("##c1", "Versions installees", countStr, sub, Col::Accent);
+    }
     ImGui::SameLine(0.f, 14.f);
-    statCard("##c2", "Projets",             "0", "Aucun projet",       Col::Blue);
+    statCard("##c2", "Projets", "0", "Aucun projet", Col::Blue);
     ImGui::SameLine(0.f, 14.f);
     {
         std::string latestVal = m_fetcher.hasData() ? m_fetcher.getLatestVersion() : "...";
@@ -194,28 +211,170 @@ void UIManager::pageDashboard()
         statCard("##c3", "Derniere version", latestVal.c_str(), latestSub, Col::Green);
     }
 
-    // ── Activité récente ──────────────────────────────────────────────────────
+    // ── Liste des versions installées ─────────────────────────────────────────
     ImGui::SetCursorPos({28.f, 230.f});
     ImGui::PushStyleColor(ImGuiCol_Text, Col::TextDim);
-    ImGui::Text("Activite recente");
+    ImGui::Text("Versions installees");
     ImGui::PopStyleColor();
 
     ImGui::SetCursorPos({28.f, 256.f});
     ImGui::PushStyleColor(ImGuiCol_ChildBg, Col::BgPanel);
     ImGui::PushStyleVar(ImGuiStyleVar_ChildRounding, 8.f);
-    ImGui::BeginChild("##activity", ImVec2(560.f, 100.f), false);
-    ImGui::SetCursorPos({16.f, 32.f});
-    ImGui::PushStyleColor(ImGuiCol_Text, Col::TextHint);
-    ImGui::Text("Aucune activite pour le moment.");
-    ImGui::PopStyleColor();
+
+    float panelH = installedCount == 0 ? 68.f
+                 : std::min(installedCount * 66.f + 16.f, 320.f);
+    ImGui::BeginChild("##installed_panel", ImVec2(620.f, panelH), false);
+
+    if (m_installedVersions.empty()) {
+        ImGui::Spacing(); ImGui::Spacing();
+        ImGui::SetCursorPosX(16.f);
+        ImGui::PushStyleColor(ImGuiCol_Text, Col::TextHint);
+        ImGui::Text("Aucune version installee. Rendez-vous sur la page Versions pour en installer une.");
+        ImGui::PopStyleColor();
+    } else {
+        float listW = ImGui::GetContentRegionAvail().x;
+        ImGui::Spacing();
+
+        for (size_t i = 0; i < m_installedVersions.size(); ++i) {
+            const auto& v = m_installedVersions[i];
+            bool canLaunch = !v.executable.empty();
+
+            // ── Nom de version ───────────────────────────────────────────────
+            ImGui::SetCursorPosX(16.f);
+            ImGui::PushStyleColor(ImGuiCol_Text, Col::Text);
+            ImGui::Text("Blender %s", v.version.c_str());
+            ImGui::PopStyleColor();
+
+            // ── Répertoire + boutons sur la même ligne ───────────────────────
+            ImGui::SetCursorPosX(16.f);
+            ImGui::PushStyleColor(ImGuiCol_Text, Col::TextHint);
+            std::string displayDir = v.dirName;
+            if (displayDir.size() > 42) displayDir = displayDir.substr(0, 39) + "...";
+            ImGui::Text("%s", displayDir.c_str());
+            ImGui::PopStyleColor();
+
+            // Bouton Lancer
+            ImGui::SameLine(listW - 228.f);
+            if (!canLaunch) ImGui::BeginDisabled();
+            ImGui::PushStyleColor(ImGuiCol_Button,        Col::Accent);
+            ImGui::PushStyleColor(ImGuiCol_ButtonHovered, Col::AccentHover);
+            ImGui::PushStyleColor(ImGuiCol_ButtonActive,  Col::AccentPress);
+            ImGui::PushStyleVar  (ImGuiStyleVar_FrameRounding, 6.f);
+            std::string btnId = "  Lancer##lnch_" + v.dirName;
+            if (ImGui::Button(btnId.c_str(), ImVec2(100.f, 26.f)))
+                launchBlender(v);
+            ImGui::PopStyleVar();
+            ImGui::PopStyleColor(3);
+            if (!canLaunch) ImGui::EndDisabled();
+
+            // Bouton Supprimer
+            ImGui::SameLine(listW - 116.f);
+            ImGui::PushStyleColor(ImGuiCol_Button,        ImVec4(0.55f, 0.15f, 0.15f, 1.f));
+            ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(0.75f, 0.20f, 0.20f, 1.f));
+            ImGui::PushStyleColor(ImGuiCol_ButtonActive,  ImVec4(0.40f, 0.10f, 0.10f, 1.f));
+            ImGui::PushStyleVar  (ImGuiStyleVar_FrameRounding, 6.f);
+            std::string delId = "  Suppr.##del_" + v.dirName;
+            if (ImGui::Button(delId.c_str(), ImVec2(100.f, 26.f))) {
+                m_deleteConfirm.visible  = true;
+                m_deleteConfirm.dirName  = v.dirName;
+                m_deleteConfirm.fullPath = v.fullPath;
+            }
+            ImGui::PopStyleVar();
+            ImGui::PopStyleColor(3);
+
+            // ── Séparateur ───────────────────────────────────────────────────
+            ImGui::Spacing();
+            if (i + 1 < m_installedVersions.size()) {
+                ImGui::PushStyleColor(ImGuiCol_Separator, Col::Separator);
+                ImGui::Separator();
+                ImGui::PopStyleColor();
+                ImGui::Spacing();
+            }
+        }
+    }
+
     ImGui::EndChild();
     ImGui::PopStyleVar();
     ImGui::PopStyleColor();
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
+// Scan du répertoire d'installation pour détecter les versions installées
+// ─────────────────────────────────────────────────────────────────────────────
+void UIManager::scanInstalledVersions()
+{
+    namespace fs = std::filesystem;
+    m_installedVersions.clear();
+    m_installedDirty = false;
+
+    std::error_code ec;
+    fs::path base = fs::weakly_canonical(fs::absolute(m_installPath), ec);
+    if (!fs::is_directory(base, ec)) return;
+
+    for (auto& entry : fs::directory_iterator(base, ec)) {
+        if (!entry.is_directory(ec)) continue;
+        std::string name = entry.path().filename().string();
+        // Correspond à "blender-X.Y.Z" ou "blender-X.Y.Z-platform-arch"
+        if (name.rfind("blender-", 0) != 0) continue;
+
+        // Extraire le numéro de version : après "blender-" jusqu'au "-" suivant
+        std::string rest    = name.substr(8);
+        std::string version = rest.substr(0, rest.find('-'));
+        if (version.empty()) continue;
+
+        // Chercher l'exécutable
+        fs::path exePath = entry.path() / "blender";
+#ifdef _WIN32
+        exePath = entry.path() / "blender.exe";
+#endif
+        std::string exeStr = fs::exists(exePath, ec) ? exePath.string() : "";
+
+        m_installedVersions.push_back({name, version, entry.path().string(), exeStr});
+    }
+
+    // Tri décroissant (version la plus récente en premier)
+    std::sort(m_installedVersions.begin(), m_installedVersions.end(),
+        [](const InstalledVersion& a, const InstalledVersion& b) {
+            return a.version > b.version;
+        });
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Lancement de Blender en arrière-plan
+// ─────────────────────────────────────────────────────────────────────────────
+void UIManager::launchBlender(const InstalledVersion& v)
+{
+    if (v.executable.empty()) return;
+#ifdef _WIN32
+    std::string cmd = "start \"\" \"" + v.executable + "\"";
+    std::system(cmd.c_str());
+#else
+    std::string cmd = "\"" + v.executable + "\" &";
+    std::system(cmd.c_str());
+#endif
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
 void UIManager::pageVersions()
 {
+    // Rescan si nécessaire (au cas où on arrive ici sans passer par le dashboard)
+    if (m_installedDirty) scanInstalledVersions();
+
+    // Lambda : vérifie si une version major.minor ("4.4") est déjà installée
+    auto isInstalled = [&](const std::string& mm) -> bool {
+        std::string prefix = mm + ".";
+        for (const auto& iv : m_installedVersions)
+            if (iv.version.rfind(prefix, 0) == 0) return true;
+        return false;
+    };
+    // Lambda : retourne le patch installé pour un major.minor donné ("4.4.3")
+    auto installedPatch = [&](const std::string& mm) -> std::string {
+        std::string prefix = mm + ".";
+        for (const auto& iv : m_installedVersions)
+            if (iv.version.rfind(prefix, 0) == 0) return iv.version;
+        return "";
+    };
+
     bool        loading  = m_fetcher.isLoading();
     bool        failed   = m_fetcher.hasFailed();
     bool        hasData  = m_fetcher.hasData();
@@ -319,9 +478,14 @@ void UIManager::pageVersions()
 
                 ImGui::TableSetColumnIndex(1);
                 ImGui::SetCursorPosY(ImGui::GetCursorPosY() + 6.f);
-                if (v.isLatest) {
+                std::string patch = installedPatch(v.version);
+                if (!patch.empty()) {
                     ImGui::PushStyleColor(ImGuiCol_Text, Col::Green);
-                    ImGui::Text("\u25cf Derniere version");
+                    ImGui::Text("  Installee (%s)", patch.c_str());
+                    ImGui::PopStyleColor();
+                } else if (v.isLatest) {
+                    ImGui::PushStyleColor(ImGuiCol_Text, Col::Green);
+                    ImGui::Text("Derniere version");
                     ImGui::PopStyleColor();
                 } else {
                     ImGui::PushStyleColor(ImGuiCol_Text, Col::TextHint);
@@ -331,21 +495,38 @@ void UIManager::pageVersions()
 
                 ImGui::TableSetColumnIndex(2);
                 ImGui::SetCursorPosY(ImGui::GetCursorPosY() + 4.f);
-                ImGui::PushStyleColor(ImGuiCol_Button,
-                    v.isLatest ? Col::Accent      : Col::BgCard);
-                ImGui::PushStyleColor(ImGuiCol_ButtonHovered,
-                    v.isLatest ? Col::AccentHover : ImVec4(0.25f, 0.25f, 0.32f, 1.f));
-                ImGui::PushStyleColor(ImGuiCol_ButtonActive,
-                    v.isLatest ? Col::AccentPress : Col::BgPanel);
-                ImGui::PushStyleVar(ImGuiStyleVar_FrameRounding, 5.f);
-                std::string btnId = "Installer##" + v.version;
-                if (ImGui::Button(btnId.c_str(), ImVec2(100.f, 26.f))) {
-                    auto plat = SynchronousDownloader::currentPlatform();
-                    m_install.open(v.version, m_installPath, plat.defaultFormat);
-                    m_fetcher.fetchReleases(v.version);
+
+                bool alreadyInstalled = !patch.empty();
+                if (alreadyInstalled) {
+                    // Version déjà installée : badge gris non cliquable
+                    ImGui::PushStyleColor(ImGuiCol_Button,        ImVec4(0.20f, 0.38f, 0.22f, 0.55f));
+                    ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(0.20f, 0.38f, 0.22f, 0.55f));
+                    ImGui::PushStyleColor(ImGuiCol_ButtonActive,  ImVec4(0.20f, 0.38f, 0.22f, 0.55f));
+                    ImGui::PushStyleColor(ImGuiCol_Text,          Col::Green);
+                    ImGui::PushStyleVar(ImGuiStyleVar_FrameRounding, 5.f);
+                    ImGui::BeginDisabled();
+                    std::string badgeId = "  Installee##badge_" + v.version;
+                    ImGui::Button(badgeId.c_str(), ImVec2(100.f, 26.f));
+                    ImGui::EndDisabled();
+                    ImGui::PopStyleVar();
+                    ImGui::PopStyleColor(4);
+                } else {
+                    ImGui::PushStyleColor(ImGuiCol_Button,
+                        v.isLatest ? Col::Accent      : Col::BgCard);
+                    ImGui::PushStyleColor(ImGuiCol_ButtonHovered,
+                        v.isLatest ? Col::AccentHover : ImVec4(0.25f, 0.25f, 0.32f, 1.f));
+                    ImGui::PushStyleColor(ImGuiCol_ButtonActive,
+                        v.isLatest ? Col::AccentPress : Col::BgPanel);
+                    ImGui::PushStyleVar(ImGuiStyleVar_FrameRounding, 5.f);
+                    std::string btnId = "Installer##" + v.version;
+                    if (ImGui::Button(btnId.c_str(), ImVec2(100.f, 26.f))) {
+                        auto plat = SynchronousDownloader::currentPlatform();
+                        m_install.open(v.version, m_installPath, plat.defaultFormat);
+                        m_fetcher.fetchReleases(v.version);
+                    }
+                    ImGui::PopStyleVar();
+                    ImGui::PopStyleColor(3);
                 }
-                ImGui::PopStyleVar();
-                ImGui::PopStyleColor(3);
             }
             ImGui::EndTable();
         }
@@ -496,11 +677,12 @@ void UIManager::renderInstallModal()
 {
     if (!m_install.visible) return;
 
-    // ── Vérifier si le téléchargement est terminé ─────────────────────────────
-    if (m_install.downloading && m_install.future.valid()) {
+    // ── Vérifier si le futur (download+extract) est terminé ──────────────────
+    if ((m_install.downloading || m_install.extracting) && m_install.future.valid()) {
         if (m_install.future.wait_for(std::chrono::seconds(0)) == std::future_status::ready) {
             m_install.future.get();
             m_install.downloading = false;
+            m_install.extracting  = false;
         }
     }
 
@@ -638,28 +820,31 @@ void UIManager::renderInstallModal()
         ImGui::Spacing();
 
         // ── Zone progression / état ────────────────────────────────────────────
-        DownloadProgress prog;
+        DownloadProgress  prog;
+        ExtractProgress   extProg;
         {
             std::lock_guard<std::mutex> lk(m_install.progressMutex);
-            prog = m_install.progress;
+            prog    = m_install.progress;
+            extProg = m_install.extractProgress;
         }
 
         if (m_install.downloading) {
-            // Barre de progression
+            // ── Téléchargement en cours ────────────────────────────────────────
+            ImGui::PushStyleColor(ImGuiCol_Text, Col::TextDim);
+            ImGui::Text("Telechargement...");
+            ImGui::PopStyleColor();
+
             char progLabel[64];
             snprintf(progLabel, sizeof(progLabel), "%.0f%%", prog.fraction() * 100.f);
             ImGui::PushStyleColor(ImGuiCol_PlotHistogram, Col::Accent);
             ImGui::ProgressBar(prog.fraction(), ImVec2(-1.f, 18.f), progLabel);
             ImGui::PopStyleColor();
 
-            ImGui::PushStyleColor(ImGuiCol_Text, Col::TextDim);
-            std::string sizeStr = prog.humanSize();
-            ImGui::Text("%s", sizeStr.c_str());
+            ImGui::PushStyleColor(ImGuiCol_Text, Col::TextHint);
+            ImGui::Text("%s", prog.humanSize().c_str());
             ImGui::PopStyleColor();
 
             ImGui::Spacing();
-
-            // Bouton Annuler
             ImGui::PushStyleColor(ImGuiCol_Button,        ImVec4(0.55f, 0.18f, 0.18f, 1.f));
             ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(0.70f, 0.22f, 0.22f, 1.f));
             ImGui::PushStyleColor(ImGuiCol_ButtonActive,  ImVec4(0.40f, 0.12f, 0.12f, 1.f));
@@ -669,13 +854,48 @@ void UIManager::renderInstallModal()
             ImGui::PopStyleVar();
             ImGui::PopStyleColor(3);
 
-        } else if (prog.done) {
-            // Succès
+        } else if (m_install.extracting) {
+            // ── Extraction en cours ────────────────────────────────────────────
+            ImGui::PushStyleColor(ImGuiCol_Text, Col::TextDim);
+            ImGui::Text("Extraction en cours...");
+            ImGui::PopStyleColor();
+
+            // Barre indéterminée (on ne connaît pas le nombre total d'entrées)
+            float t = static_cast<float>(ImGui::GetTime());
+            float p = (std::sin(t * 2.5f) * 0.5f + 0.5f) * 0.85f + 0.05f;
+            ImGui::PushStyleColor(ImGuiCol_PlotHistogram, Col::Accent);
+            ImGui::ProgressBar(p, ImVec2(-1.f, 18.f), "");
+            ImGui::PopStyleColor();
+
+            ImGui::PushStyleColor(ImGuiCol_Text, Col::TextHint);
+            if (!extProg.currentFile.empty()) {
+                // Tronquer si trop long
+                std::string fname = extProg.currentFile;
+                if (fname.size() > 55) fname = "..." + fname.substr(fname.size() - 52);
+                ImGui::Text("%llu entrees  |  %s",
+                            (unsigned long long)extProg.entriesDone, fname.c_str());
+            } else {
+                ImGui::Text("Preparation...");
+            }
+            ImGui::PopStyleColor();
+
+            ImGui::Spacing();
+            ImGui::PushStyleColor(ImGuiCol_Button,        ImVec4(0.55f, 0.18f, 0.18f, 1.f));
+            ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(0.70f, 0.22f, 0.22f, 1.f));
+            ImGui::PushStyleColor(ImGuiCol_ButtonActive,  ImVec4(0.40f, 0.12f, 0.12f, 1.f));
+            ImGui::PushStyleVar  (ImGuiStyleVar_FrameRounding, 6.f);
+            if (ImGui::Button("Annuler##ext", ImVec2(120.f, 32.f)) && m_install.extractor)
+                m_install.extractor->cancel();
+            ImGui::PopStyleVar();
+            ImGui::PopStyleColor(3);
+
+        } else if (extProg.done) {
+            // ── Succès final ───────────────────────────────────────────────────
             ImGui::PushStyleColor(ImGuiCol_Text, Col::Green);
-            ImGui::Text("\u2713 Telechargement termine !");
+            ImGui::Text("\u2713 Installation terminee !");
             ImGui::PopStyleColor();
             ImGui::PushStyleColor(ImGuiCol_Text, Col::TextHint);
-            ImGui::TextWrapped("%s", m_install.downloadedPath.c_str());
+            ImGui::TextWrapped("%s", m_install.extractedDir.c_str());
             ImGui::PopStyleColor();
             ImGui::Spacing();
 
@@ -690,18 +910,31 @@ void UIManager::renderInstallModal()
             ImGui::PopStyleVar();
             ImGui::PopStyleColor(3);
 
-        } else if (prog.failed) {
-            // Échec
+        } else if (extProg.failed || prog.failed) {
+            // ── Échec ──────────────────────────────────────────────────────────
             ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.9f, 0.3f, 0.3f, 1.f));
-            ImGui::Text("\u2715 Echec du telechargement");
+            ImGui::Text(extProg.failed ? "\u2715 Echec de l'extraction"
+                                       : "\u2715 Echec du telechargement");
             ImGui::PopStyleColor();
             ImGui::PushStyleColor(ImGuiCol_Text, Col::TextHint);
-            ImGui::TextWrapped("%s", prog.error.c_str());
+            const std::string& errMsg = extProg.failed ? extProg.error : prog.error;
+            if (!errMsg.empty()) ImGui::TextWrapped("%s", errMsg.c_str());
             ImGui::PopStyleColor();
             ImGui::Spacing();
 
+            ImGui::PushStyleColor(ImGuiCol_Button,        Col::BgCard);
+            ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(0.25f, 0.25f, 0.32f, 1.f));
+            ImGui::PushStyleColor(ImGuiCol_ButtonActive,  Col::BgPanel);
+            ImGui::PushStyleVar  (ImGuiStyleVar_FrameRounding, 6.f);
+            if (ImGui::Button("Fermer", ImVec2(100.f, 32.f))) {
+                m_install.visible = false;
+                ImGui::CloseCurrentPopup();
+            }
+            ImGui::PopStyleVar();
+            ImGui::PopStyleColor(3);
+
         } else {
-            // Boutons Télécharger / Annuler
+            // ── Boutons Télécharger / Annuler ──────────────────────────────────
             bool canDownload = !m_install.selectedPatch.empty() && relHas;
 
             if (!canDownload) ImGui::BeginDisabled();
@@ -712,31 +945,66 @@ void UIManager::renderInstallModal()
             if (ImGui::Button("Telecharger", ImVec2(140.f, 32.f))) {
                 std::string filename = SynchronousDownloader::buildFilename(
                     m_install.selectedPatch, plat.os, plat.arch, m_install.selectedFmt);
-                std::string url = SynchronousDownloader::buildUrl(
+                std::string url    = SynchronousDownloader::buildUrl(
                     m_install.majorMinor, filename);
                 std::string outDir = m_install.outputDir;
 
-                m_install.downloading = true;
-                m_install.progress    = {};
-                m_install.downloader  = std::make_unique<SynchronousDownloader>();
+                m_install.downloading   = true;
+                m_install.progress      = {};
+                m_install.extractProgress = {};
+                m_install.downloader    = std::make_unique<SynchronousDownloader>();
+                m_install.extractor     = std::make_unique<Extractor>();
 
-                SynchronousDownloader* dlPtr = m_install.downloader.get();
+                SynchronousDownloader* dlPtr  = m_install.downloader.get();
+                Extractor*             extPtr = m_install.extractor.get();
+
                 m_install.future = std::async(std::launch::async,
-                    [this, dlPtr, url, outDir]()
+                    [this, dlPtr, extPtr, url, outDir]()
                     {
-                        auto cb = [this](const DownloadProgress& p) {
+                        // ── 1. Téléchargement ─────────────────────────────────
+                        auto dlCb = [this](const DownloadProgress& p) {
                             std::lock_guard<std::mutex> lk(m_install.progressMutex);
                             m_install.progress = p;
                         };
-                        std::string result = dlPtr->download(url, outDir, cb);
+                        std::string archivePath = dlPtr->download(url, outDir, dlCb);
 
-                        std::lock_guard<std::mutex> lk(m_install.progressMutex);
-                        if (!result.empty()) {
-                            m_install.progress.done  = true;
-                            m_install.downloadedPath = result;
-                        } else if (!dlPtr->isCancelled()) {
-                            m_install.progress.failed = true;
-                            m_install.progress.error  = "Telechargement echoue.";
+                        if (archivePath.empty()) {
+                            if (!dlPtr->isCancelled()) {
+                                std::lock_guard<std::mutex> lk(m_install.progressMutex);
+                                m_install.progress.failed = true;
+                                m_install.progress.error  = "Telechargement echoue.";
+                            }
+                            return;
+                        }
+
+                        // ── 2. Extraction ─────────────────────────────────────
+                        {
+                            std::lock_guard<std::mutex> lk(m_install.progressMutex);
+                            m_install.downloading = false;
+                            m_install.extracting  = true;
+                        }
+
+                        auto extCb = [this](const ExtractProgress& p) {
+                            std::lock_guard<std::mutex> lk(m_install.progressMutex);
+                            m_install.extractProgress = p;
+                        };
+                        std::string extracted = extPtr->extract(archivePath, outDir, extCb);
+
+                        {
+                            std::lock_guard<std::mutex> lk(m_install.progressMutex);
+                            m_install.extracting = false;
+                            if (!extracted.empty()) {
+                                // Supprimer l'archive maintenant qu'elle n'est plus utile
+                                std::error_code ec;
+                                std::filesystem::remove(archivePath, ec);
+
+                                m_install.extractProgress.done = true;
+                                m_install.extractedDir         = extracted;
+                                m_installedDirty               = true; // forcer un rescan du dashboard
+                            } else if (!extPtr->isCancelled()) {
+                                m_install.extractProgress.failed = true;
+                                m_install.extractProgress.error  = "Extraction echouee.";
+                            }
                         }
                     });
             }
@@ -765,4 +1033,113 @@ void UIManager::renderInstallModal()
     ImGui::PopStyleColor(2);
 
     if (!open) m_install.visible = false;
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Modale de confirmation de suppression
+// ─────────────────────────────────────────────────────────────────────────────
+void UIManager::renderDeleteConfirmModal()
+{
+    if (!m_deleteConfirm.visible) return;
+
+    ImGuiIO& io = ImGui::GetIO();
+    ImGui::SetNextWindowPos(ImVec2(io.DisplaySize.x * 0.5f, io.DisplaySize.y * 0.5f),
+                            ImGuiCond_Always, ImVec2(0.5f, 0.5f));
+    ImGui::SetNextWindowSize(ImVec2(480.f, 0.f), ImGuiCond_Always);
+    ImGui::OpenPopup("##delete_confirm");
+
+    ImGui::PushStyleColor(ImGuiCol_PopupBg,          Col::BgPanel);
+    ImGui::PushStyleColor(ImGuiCol_ModalWindowDimBg, ImVec4(0.f, 0.f, 0.f, 0.55f));
+    ImGui::PushStyleVar  (ImGuiStyleVar_WindowPadding,  ImVec2(28.f, 24.f));
+    ImGui::PushStyleVar  (ImGuiStyleVar_WindowRounding, 12.f);
+
+    bool open = true;
+    if (ImGui::BeginPopupModal("##delete_confirm", &open,
+        ImGuiWindowFlags_NoTitleBar | ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoMove))
+    {
+        // ── Titre ──────────────────────────────────────────────────────────────
+        ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.90f, 0.30f, 0.30f, 1.f));
+        ImGui::Text("Supprimer Blender");
+        ImGui::PopStyleColor();
+
+        ImGui::Spacing();
+        ImGui::PushStyleColor(ImGuiCol_Separator, Col::Separator);
+        ImGui::Separator();
+        ImGui::PopStyleColor();
+        ImGui::Spacing();
+
+        // ── Message ─────────────────────────────────────────────────────────────
+        ImGui::PushStyleColor(ImGuiCol_Text, Col::TextDim);
+        ImGui::TextWrapped("Vous allez supprimer definitivement le dossier :");
+        ImGui::PopStyleColor();
+
+        ImGui::Spacing();
+        ImGui::SetCursorPosX(12.f);
+        ImGui::PushStyleColor(ImGuiCol_ChildBg, Col::BgCard);
+        ImGui::PushStyleVar  (ImGuiStyleVar_ChildRounding, 6.f);
+        ImGui::BeginChild("##del_path", ImVec2(ImGui::GetContentRegionAvail().x, 36.f), false);
+        ImGui::SetCursorPos({10.f, 8.f});
+        ImGui::PushStyleColor(ImGuiCol_Text, Col::Text);
+        std::string disp = m_deleteConfirm.dirName;
+        if (disp.size() > 52) disp = disp.substr(0, 49) + "...";
+        ImGui::Text("%s", disp.c_str());
+        ImGui::PopStyleColor();
+        ImGui::EndChild();
+        ImGui::PopStyleVar();
+        ImGui::PopStyleColor();
+
+        ImGui::Spacing();
+        ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.85f, 0.35f, 0.35f, 1.f));
+        ImGui::TextWrapped("Cette action est irreversible.");
+        ImGui::PopStyleColor();
+
+        ImGui::Spacing(); ImGui::Spacing();
+        ImGui::PushStyleColor(ImGuiCol_Separator, Col::Separator);
+        ImGui::Separator();
+        ImGui::PopStyleColor();
+        ImGui::Spacing();
+
+        // ── Boutons ─────────────────────────────────────────────────────────────
+        float btnW = 120.f;
+        float spacing = 12.f;
+        float totalW  = btnW * 2.f + spacing;
+        ImGui::SetCursorPosX((ImGui::GetContentRegionAvail().x - totalW) * 0.5f);
+
+        // Confirmer
+        ImGui::PushStyleColor(ImGuiCol_Button,        ImVec4(0.60f, 0.15f, 0.15f, 1.f));
+        ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(0.78f, 0.20f, 0.20f, 1.f));
+        ImGui::PushStyleColor(ImGuiCol_ButtonActive,  ImVec4(0.42f, 0.10f, 0.10f, 1.f));
+        ImGui::PushStyleVar  (ImGuiStyleVar_FrameRounding, 6.f);
+        if (ImGui::Button("  Supprimer", ImVec2(btnW, 34.f))) {
+            std::error_code ec;
+            std::filesystem::remove_all(m_deleteConfirm.fullPath, ec);
+            m_installedDirty    = true;
+            m_deleteConfirm.visible = false;
+            ImGui::CloseCurrentPopup();
+        }
+        ImGui::PopStyleVar();
+        ImGui::PopStyleColor(3);
+
+        ImGui::SameLine(0.f, spacing);
+
+        // Annuler
+        ImGui::PushStyleColor(ImGuiCol_Button,        Col::BgCard);
+        ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(0.25f, 0.25f, 0.32f, 1.f));
+        ImGui::PushStyleColor(ImGuiCol_ButtonActive,  Col::BgPanel);
+        ImGui::PushStyleVar  (ImGuiStyleVar_FrameRounding, 6.f);
+        if (ImGui::Button("  Annuler##delcancel", ImVec2(btnW, 34.f))) {
+            m_deleteConfirm.visible = false;
+            ImGui::CloseCurrentPopup();
+        }
+        ImGui::PopStyleVar();
+        ImGui::PopStyleColor(3);
+
+        ImGui::Spacing();
+        ImGui::EndPopup();
+    }
+
+    ImGui::PopStyleVar(2);
+    ImGui::PopStyleColor(2);
+
+    if (!open) m_deleteConfirm.visible = false;
 }

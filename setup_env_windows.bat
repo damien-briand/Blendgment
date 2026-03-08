@@ -1,40 +1,100 @@
 @echo off
-echo Installing dependencies for Vulkan Tutorial...
+setlocal EnableDelayedExpansion
 
-:: Check if vcpkg is installed
-where vcpkg >nul 2>nul
+rem =============================================================================
+rem setup_env_windows.bat  -  Installation des dependances pour Blendgment
+rem
+rem Dependances requises :
+rem   - Visual Studio 2022 (ou Build Tools) avec workload "C++ Desktop"
+rem   - CMake >= 3.20
+rem   - Ninja
+rem   - Vulkan SDK LunarG
+rem   - vcpkg  (pour GLFW, libcurl, libarchive)
+rem
+rem ImGUI est telecharge automatiquement par CMake (FetchContent).
+rem =============================================================================
+
+echo.
+echo ============================================================
+echo  Blendgment - Setup environnement Windows
+echo ============================================================
+echo.
+
+rem -- 1. Verifier CMake -------------------------------------------------------
+cmake --version >nul 2>nul
 if %ERRORLEVEL% neq 0 (
-    echo vcpkg not found. Please install vcpkg first.
-    echo Visit https://github.com/microsoft/vcpkg for installation instructions.
-    echo Typically, you would:
-    echo 1. git clone https://github.com/Microsoft/vcpkg.git
-    echo 2. cd vcpkg
-    echo 3. .\bootstrap-vcpkg.bat
-    echo 4. Add vcpkg to your PATH
-    exit /b 1
+    echo [ERREUR] CMake non trouve.
+    echo Telechargez-le depuis https://cmake.org/download/
+    echo Cochez "Add CMake to system PATH" lors de l'installation.
+    pause & exit /b 1
 )
+echo [ OK ] CMake detecte.
 
-:: Enable binary caching for vcpkg
-echo Enabling binary caching for vcpkg...
-set VCPKG_BINARY_SOURCES=clear;files,%TEMP%\vcpkg-cache,readwrite
+rem -- 2. Verifier Ninja -------------------------------------------------------
+ninja --version >nul 2>nul
+if %ERRORLEVEL% neq 0 (
+    echo [INFO] Ninja non trouve. Installation via winget...
+    winget install --id Ninja-build.Ninja -e --silent
+    if %ERRORLEVEL% neq 0 (
+        echo [ERREUR] Impossible d'installer Ninja automatiquement.
+        echo Telechargez-le depuis https://ninja-build.org/ et ajoutez-le au PATH.
+        pause & exit /b 1
+    )
+)
+echo [ OK ] Ninja detecte.
 
-:: Create cache directory if it doesn't exist
-if not exist %TEMP%\vcpkg-cache mkdir %TEMP%\vcpkg-cache
+rem -- 3. Verifier le Vulkan SDK -----------------------------------------------
+if not defined VULKAN_SDK (
+    echo.
+    echo [ERREUR] Vulkan SDK non detecte ^(variable VULKAN_SDK absente^).
+    echo Telechargez et installez le SDK depuis :
+    echo   https://vulkan.lunarg.com/sdk/home#windows
+    echo Relancez ce script apres l'installation.
+    pause & exit /b 1
+)
+echo [ OK ] Vulkan SDK : %VULKAN_SDK%
 
-:: Install all dependencies at once using vcpkg with parallel installation
-echo Installing all dependencies...
-vcpkg install --triplet=x64-windows --x-manifest-root=%~dp0\.. --feature-flags=binarycaching,manifests --x-install-root=%VCPKG_INSTALLATION_ROOT%/installed
+rem -- 4. Verifier vcpkg -------------------------------------------------------
+vcpkg version >nul 2>nul
+if %ERRORLEVEL% neq 0 (
+    echo.
+    echo [INFO] vcpkg non trouve dans le PATH.
+    echo Installez vcpkg :
+    echo   git clone https://github.com/microsoft/vcpkg.git C:\vcpkg
+    echo   C:\vcpkg\bootstrap-vcpkg.bat
+    echo   Ajoutez C:\vcpkg au PATH puis relancez ce script.
+    pause & exit /b 1
+)
+echo [ OK ] vcpkg detecte.
 
-:: Remind about Vulkan SDK
+rem -- 5. Installer les dependances via vcpkg ----------------------------------
 echo.
-echo Don't forget to install the Vulkan SDK from https://vulkan.lunarg.com/
+echo [INFO] Installation des dependances via vcpkg (x64-windows)...
+
+vcpkg install glfw3:x64-windows
+if %ERRORLEVEL% neq 0 ( echo [ERREUR] Echec glfw3 & pause & exit /b 1 )
+echo [ OK ] glfw3
+
+vcpkg install curl:x64-windows
+if %ERRORLEVEL% neq 0 ( echo [ERREUR] Echec curl & pause & exit /b 1 )
+echo [ OK ] curl
+
+vcpkg install libarchive:x64-windows
+if %ERRORLEVEL% neq 0 ( echo [ERREUR] Echec libarchive & pause & exit /b 1 )
+echo [ OK ] libarchive
+
+rem -- 6. Recap build ----------------------------------------------------------
+echo.
+echo ============================================================
+echo  Environnement pret !
+echo ============================================================
+echo.
+echo Pour compiler le projet, executez dans ce dossier :
+echo.
+echo   cmake -B build -S . -G Ninja -DCMAKE_BUILD_TYPE=Release ^
+echo         -DCMAKE_TOOLCHAIN_FILE=C:/vcpkg/scripts/buildsystems/vcpkg.cmake
+echo   cmake --build build
 echo.
 
-echo All dependencies have been installed successfully!
-echo You can now use CMake to build your Vulkan project.
-echo.
-echo Example CMake command:
-echo cmake -B build -S . -DCMAKE_TOOLCHAIN_FILE=[path\to\vcpkg]\scripts\buildsystems\vcpkg.cmake
-echo cmake --build build
-
-exit /b 0
+pause
+endlocal

@@ -2,11 +2,23 @@
 
 #include <imgui.h>
 #include <string>
+#include <vector>
 #include <mutex>
 #include <future>
 #include <memory>
 #include "services/BlenderFetcher.h"
 #include "utils/SynchronousDownloader.h"
+#include "utils/Extractor.h"
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Version Blender détectée dans le répertoire d'installation
+// ─────────────────────────────────────────────────────────────────────────────
+struct InstalledVersion {
+    std::string dirName;    // "blender-4.4.3-linux-x64"
+    std::string version;   // "4.4.3"
+    std::string fullPath;  // chemin absolu du répertoire
+    std::string executable;// chemin absolu de l'exécutable (vide si absent)
+};
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Pages de navigation
@@ -38,6 +50,11 @@ private:
 
     // ── Modale installation ───────────────────────────────────────────────────
     void renderInstallModal();
+    void renderDeleteConfirmModal();
+
+    // ── Versions installées ───────────────────────────────────────────────────
+    void scanInstalledVersions();
+    void launchBlender(const InstalledVersion& v);
 
     // ── Widgets réutilisables ─────────────────────────────────────────────────
     void statCard(const char* id, const char* title,
@@ -49,6 +66,17 @@ private:
     BlenderFetcher m_fetcher;
     bool           m_fetchTriggered = false;
     bool           m_showRecentOnly = true;
+
+    // ── Versions installées (cache, rescané quand dirty) ──────────────────────
+    std::vector<InstalledVersion> m_installedVersions;
+    bool                          m_installedDirty = true;
+
+    // ── Confirmation suppression ───────────────────────────────────────────────
+    struct DeleteConfirm {
+        bool        visible  = false;
+        std::string dirName;
+        std::string fullPath;
+    } m_deleteConfirm;
 
     // ── État installation ─────────────────────────────────────────────────────
     struct InstallState {
@@ -62,9 +90,15 @@ private:
         bool            downloading   = false;
         std::string     downloadedPath;       // rempli quand done
 
-        // Progression (écrite depuis thread download, lue depuis thread UI)
+        // Phase extraction
+        bool            extracting    = false;
+        std::string     extractedDir;         // rempli quand done
+        std::unique_ptr<Extractor> extractor;
+
+        // Progression (écrite depuis thread, lue depuis thread UI)
         std::mutex      progressMutex;
         DownloadProgress progress;
+        ExtractProgress  extractProgress;
 
         std::unique_ptr<SynchronousDownloader> downloader;
         std::future<void>                      future;
@@ -75,15 +109,19 @@ private:
             selectedPatch  = "";
             selectedFmt    = fmt;
             downloading    = false;
+            extracting     = false;
             downloadedPath.clear();
-            progress       = {};
+            extractedDir.clear();
+            progress        = {};
+            extractProgress = {};
             downloader.reset();
+            extractor.reset();
             strncpy(outputDir, dir.c_str(), sizeof(outputDir) - 1);
             outputDir[sizeof(outputDir) - 1] = '\0';
         }
     } m_install;
 
     // ── Settings state ────────────────────────────────────────────────────────
-    char m_installPath [256] = "/opt/blender";
-    char m_projectsPath[256] = "";
+    char m_installPath [256] = "../blender";
+    char m_projectsPath[256] = "../projects";
 };
