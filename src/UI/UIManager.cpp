@@ -88,7 +88,7 @@ void UIManager::renderTopBar(float barH)
     ImGui::SameLine(0.f, 8.f);
     ImGui::SetCursorPosY(15.f);
     ImGui::PushStyleColor(ImGuiCol_Text, Col::TextHint);
-    ImGui::Text("v0.1.0");
+    ImGui::Text("v0.2.0");
     ImGui::PopStyleColor();
 
     // ── Indicateur de statut (placeholder) ────────────────────────────────────
