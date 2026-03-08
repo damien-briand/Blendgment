@@ -106,6 +106,19 @@ void NewProjectModal::render(const char* projectsPath)
                 m_errorMsg = "Impossible de creer le dossier : " + ec.message();
                 return;
             }
+
+            // ── Dossier textures ──────────────────────────────────────────────
+            fs::create_directories(newDir / "textures", ec);
+
+            // ── Copie du fichier .blend de base ───────────────────────────────
+            fs::path blendSrc = fs::weakly_canonical(
+                fs::absolute("../BasicBlendFile.blend"), ec);
+            if (fs::exists(blendSrc, ec)) {
+                fs::path blendDst = newDir / (projName + ".blend");
+                fs::copy_file(blendSrc, blendDst,
+                              fs::copy_options::overwrite_existing, ec);
+            }
+
             m_visible = false;
             ImGui::CloseCurrentPopup();
         };

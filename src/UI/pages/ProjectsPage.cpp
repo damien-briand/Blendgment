@@ -8,6 +8,7 @@
 #include <vector>
 #include <string>
 #include <cstdlib>
+#include <system_error>
 
 // ─────────────────────────────────────────────────────────────────────────────
 void ProjectsPage::render(const char*      projectsPath,
@@ -92,7 +93,8 @@ void ProjectsPage::render(const char*      projectsPath,
             ImGui::Text("%s", dispPath.c_str());
             ImGui::PopStyleColor();
 
-            ImGui::SameLine(listW - 116.f);
+            // ── Bouton Ouvrir ─────────────────────────────────────────────
+            ImGui::SameLine(listW - 228.f);
             ImGui::PushStyleColor(ImGuiCol_Button,        Col::BgCard);
             ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(0.25f, 0.25f, 0.32f, 1.f));
             ImGui::PushStyleColor(ImGuiCol_ButtonActive,  Col::BgPanel);
@@ -111,6 +113,21 @@ void ProjectsPage::render(const char*      projectsPath,
             ImGui::PopStyleVar();
             ImGui::PopStyleColor(3);
 
+            // ── Bouton Supprimer ──────────────────────────────────────────────
+            ImGui::SameLine(listW - 116.f);
+            ImGui::PushStyleColor(ImGuiCol_Button,        ImVec4(0.55f, 0.15f, 0.15f, 1.f));
+            ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(0.75f, 0.20f, 0.20f, 1.f));
+            ImGui::PushStyleColor(ImGuiCol_ButtonActive,  ImVec4(0.40f, 0.10f, 0.10f, 1.f));
+            ImGui::PushStyleVar  (ImGuiStyleVar_FrameRounding, 6.f);
+            std::string delId = "  Suppr.##del_" + name;
+            if (ImGui::Button(delId.c_str(), ImVec2(100.f, 24.f))) {
+                m_deleteConfirm.visible  = true;
+                m_deleteConfirm.name     = name;
+                m_deleteConfirm.fullPath = projPath.string();
+            }
+            ImGui::PopStyleVar();
+            ImGui::PopStyleColor(3);
+
             // ── Séparateur ───────────────────────────────────────────────────
             ImGui::Spacing();
             if (i + 1 < projects.size()) {
@@ -125,4 +142,112 @@ void ProjectsPage::render(const char*      projectsPath,
     ImGui::EndChild();
     ImGui::PopStyleVar();
     ImGui::PopStyleColor();
+
+    renderDeleteConfirmModal();
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Modale de confirmation de suppression d'un projet
+// ─────────────────────────────────────────────────────────────────────────────
+void ProjectsPage::renderDeleteConfirmModal()
+{
+    if (!m_deleteConfirm.visible) return;
+
+    ImGuiIO& io = ImGui::GetIO();
+    ImGui::SetNextWindowPos(ImVec2(io.DisplaySize.x * 0.5f, io.DisplaySize.y * 0.5f),
+                            ImGuiCond_Always, ImVec2(0.5f, 0.5f));
+    ImGui::SetNextWindowSize(ImVec2(480.f, 0.f), ImGuiCond_Always);
+    ImGui::OpenPopup("##delete_project_confirm");
+
+    ImGui::PushStyleColor(ImGuiCol_PopupBg,          Col::BgPanel);
+    ImGui::PushStyleColor(ImGuiCol_ModalWindowDimBg, ImVec4(0.f, 0.f, 0.f, 0.55f));
+    ImGui::PushStyleVar  (ImGuiStyleVar_WindowPadding,  ImVec2(28.f, 24.f));
+    ImGui::PushStyleVar  (ImGuiStyleVar_WindowRounding, 12.f);
+
+    bool open = true;
+    if (ImGui::BeginPopupModal("##delete_project_confirm", &open,
+        ImGuiWindowFlags_NoTitleBar | ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoMove))
+    {
+        // ── Titre ──────────────────────────────────────────────────────────────
+        ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.90f, 0.30f, 0.30f, 1.f));
+        ImGui::Text("Supprimer le projet");
+        ImGui::PopStyleColor();
+
+        ImGui::Spacing();
+        ImGui::PushStyleColor(ImGuiCol_Separator, Col::Separator);
+        ImGui::Separator();
+        ImGui::PopStyleColor();
+        ImGui::Spacing();
+
+        // ── Message ────────────────────────────────────────────────────────────
+        ImGui::PushStyleColor(ImGuiCol_Text, Col::TextDim);
+        ImGui::TextWrapped("Vous allez supprimer definitivement le dossier :");
+        ImGui::PopStyleColor();
+
+        ImGui::Spacing();
+        ImGui::SetCursorPosX(12.f);
+        ImGui::PushStyleColor(ImGuiCol_ChildBg, Col::BgCard);
+        ImGui::PushStyleVar  (ImGuiStyleVar_ChildRounding, 6.f);
+        ImGui::BeginChild("##del_proj_path", ImVec2(ImGui::GetContentRegionAvail().x, 36.f), false);
+        ImGui::SetCursorPos({10.f, 8.f});
+        ImGui::PushStyleColor(ImGuiCol_Text, Col::Text);
+        std::string disp = m_deleteConfirm.name;
+        if (disp.size() > 52) disp = disp.substr(0, 49) + "...";
+        ImGui::Text("%s", disp.c_str());
+        ImGui::PopStyleColor();
+        ImGui::EndChild();
+        ImGui::PopStyleVar();
+        ImGui::PopStyleColor();
+
+        ImGui::Spacing();
+        ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.85f, 0.35f, 0.35f, 1.f));
+        ImGui::TextWrapped("Cette action est irreversible.");
+        ImGui::PopStyleColor();
+
+        ImGui::Spacing(); ImGui::Spacing();
+        ImGui::PushStyleColor(ImGuiCol_Separator, Col::Separator);
+        ImGui::Separator();
+        ImGui::PopStyleColor();
+        ImGui::Spacing();
+
+        // ── Boutons ────────────────────────────────────────────────────────────
+        float btnW    = 120.f;
+        float spacing = 12.f;
+        float totalW  = btnW * 2.f + spacing;
+        ImGui::SetCursorPosX((ImGui::GetContentRegionAvail().x - totalW) * 0.5f);
+
+        ImGui::PushStyleColor(ImGuiCol_Button,        ImVec4(0.60f, 0.15f, 0.15f, 1.f));
+        ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(0.78f, 0.20f, 0.20f, 1.f));
+        ImGui::PushStyleColor(ImGuiCol_ButtonActive,  ImVec4(0.42f, 0.10f, 0.10f, 1.f));
+        ImGui::PushStyleVar  (ImGuiStyleVar_FrameRounding, 6.f);
+        if (ImGui::Button("  Supprimer", ImVec2(btnW, 34.f))) {
+            std::error_code ec;
+            std::filesystem::remove_all(m_deleteConfirm.fullPath, ec);
+            m_deleteConfirm.visible = false;
+            ImGui::CloseCurrentPopup();
+        }
+        ImGui::PopStyleVar();
+        ImGui::PopStyleColor(3);
+
+        ImGui::SameLine(0.f, spacing);
+
+        ImGui::PushStyleColor(ImGuiCol_Button,        Col::BgCard);
+        ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(0.25f, 0.25f, 0.32f, 1.f));
+        ImGui::PushStyleColor(ImGuiCol_ButtonActive,  Col::BgPanel);
+        ImGui::PushStyleVar  (ImGuiStyleVar_FrameRounding, 6.f);
+        if (ImGui::Button("  Annuler##projdelcancel", ImVec2(btnW, 34.f))) {
+            m_deleteConfirm.visible = false;
+            ImGui::CloseCurrentPopup();
+        }
+        ImGui::PopStyleVar();
+        ImGui::PopStyleColor(3);
+
+        ImGui::Spacing();
+        ImGui::EndPopup();
+    }
+
+    ImGui::PopStyleVar(2);
+    ImGui::PopStyleColor(2);
+
+    if (!open) m_deleteConfirm.visible = false;
 }
