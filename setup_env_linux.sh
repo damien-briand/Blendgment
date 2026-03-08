@@ -44,7 +44,7 @@ case $PM in
         ninja-build \
         libvulkan-dev \
         vulkan-tools \
-        vulkan-validationlayers-dev \
+        vulkan-utility-libraries-dev \
         glslang-tools \
         libglfw3-dev \
         libcurl4-openssl-dev \
