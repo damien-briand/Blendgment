@@ -63,7 +63,7 @@ void UIManager::renderTopBar(float barH)
     ImGui::SameLine(0.f, 8.f);
     ImGui::SetCursorPosY(15.f);
     ImGui::PushStyleColor(ImGuiCol_Text, Col::TextHint);
-    ImGui::Text("v0.2.0");
+    ImGui::Text("v0.3.0");
     ImGui::PopStyleColor();
 
     float statusX = io.DisplaySize.x - 180.f;
