@@ -1,0 +1,9 @@
+[Desktop Entry]
+Type=Application
+Name=Blendgment
+Comment=Blender version and project manager
+Exec=blendgment
+Icon=blendgment
+Terminal=false
+Categories=Development;Graphics;
+Keywords=blender;version;manager;project;
