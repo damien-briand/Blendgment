@@ -56,7 +56,7 @@ void ProjectsPage::render(const char*      projectsPath,
     ImGui::PushStyleVar(ImGuiStyleVar_ChildRounding, 8.f);
 
     float panelH = projects.empty() ? 72.f
-                 : std::min((int)projects.size() * 58.f + 16.f, 380.f);
+                 : std::min((int)projects.size() * 58.f + 16.f, 700.f);
     ImGui::BeginChild("##proj_panel", ImVec2(900.f, panelH), false);
 
     if (projects.empty()) {
