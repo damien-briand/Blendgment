@@ -32,7 +32,7 @@ void ProjectsPage::render(const char*      projectsPath,
     ImGui::PushStyleColor(ImGuiCol_ButtonActive,  Col::AccentPress);
     ImGui::PushStyleVar  (ImGuiStyleVar_FrameRounding, 6.f);
     if (ImGui::Button("+ Nouveau projet", ImVec2(160.f, 34.f)))
-        newProjectModal.open();
+        newProjectModal.open(m_installPath);
     ImGui::PopStyleVar();
     ImGui::PopStyleColor(3);
 

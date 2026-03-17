@@ -5,12 +5,32 @@
 #include <filesystem>
 #include <cstring>
 
+#include "NewProjectModal.h"
+#include "../Theme.h"
+#include "../InstalledVersion.h"
+
+#include <imgui.h>
+#include <filesystem>
+#include <cstring>
+
 // ─────────────────────────────────────────────────────────────────────────────
-void NewProjectModal::open()
+void NewProjectModal::open(const char* installPath)
 {
     m_visible = true;
+    m_installPath = installPath;
     memset(m_name, 0, sizeof(m_name));
     m_errorMsg.clear();
+    m_selectedIdx = -1;
+    m_versions.clear();
+    
+    // Scanne les versions disponibles
+    bool dummy = false;
+    scanInstalledVersions(m_versions, dummy, installPath);
+    
+    // Sélectionne la première version par défaut
+    if (!m_versions.empty()) {
+        m_selectedIdx = 0;
+    }
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -66,6 +86,40 @@ void NewProjectModal::render(const char* projectsPath)
         if (ImGui::IsWindowAppearing())
             ImGui::SetKeyboardFocusHere(-1);
 
+        // ── Sélection version Blender ───────────────────────────────────────────
+        ImGui::Spacing();
+        ImGui::PushStyleColor(ImGuiCol_Text, Col::TextDim);
+        ImGui::Text("Version Blender :");
+        ImGui::PopStyleColor();
+        ImGui::Spacing();
+
+        ImGui::SetNextItemWidth(ImGui::GetContentRegionAvail().x);
+        ImGui::PushStyleColor(ImGuiCol_FrameBg,        Col::BgCard);
+        ImGui::PushStyleColor(ImGuiCol_FrameBgHovered, ImVec4(0.22f, 0.22f, 0.28f, 1.f));
+        ImGui::PushStyleColor(ImGuiCol_FrameBgActive,  ImVec4(0.25f, 0.25f, 0.32f, 1.f));
+        ImGui::PushStyleVar  (ImGuiStyleVar_FrameRounding, 6.f);
+
+        if (m_versions.empty()) {
+            ImGui::Text("Aucune version trouvee");
+        } else {
+            if (ImGui::BeginCombo("##version_combo", 
+                    m_selectedIdx >= 0 ? m_versions[m_selectedIdx].version.c_str() : "Selectionnez...")) {
+                for (size_t i = 0; i < m_versions.size(); ++i) {
+                    bool isSelected = (i == (size_t)m_selectedIdx);
+                    if (ImGui::Selectable(m_versions[i].version.c_str(), isSelected)) {
+                        m_selectedIdx = i;
+                    }
+                    if (isSelected) {
+                        ImGui::SetItemDefaultFocus();
+                    }
+                }
+                ImGui::EndCombo();
+            }
+        }
+
+        ImGui::PopStyleVar();
+        ImGui::PopStyleColor(3);
+
         // ── Message d'erreur ───────────────────────────────────────────────────
         if (!m_errorMsg.empty()) {
             ImGui::Spacing();
@@ -86,6 +140,12 @@ void NewProjectModal::render(const char* projectsPath)
         ImGui::SetCursorPosX((ImGui::GetContentRegionAvail().x - totalW) * 0.5f);
 
         auto tryCreate = [&]() {
+            // Vérifie qu'une version est sélectionnée
+            if (m_selectedIdx < 0 || m_selectedIdx >= (int)m_versions.size()) {
+                m_errorMsg = "Selectionnez une version de Blender.";
+                return;
+            }
+
             std::string projName(m_name);
             for (char c : projName) {
                 if (c == '/' || c == '\\' || c == ':' || c == '*' ||
@@ -110,14 +170,20 @@ void NewProjectModal::render(const char* projectsPath)
             // ── Dossier textures ──────────────────────────────────────────────
             fs::create_directories(newDir / "textures", ec);
 
-            // ── Copie du fichier .blend de base ───────────────────────────────
-            fs::path blendSrc = fs::weakly_canonical(
-                fs::absolute("../BasicBlendFile.blend"), ec);
-            if (fs::exists(blendSrc, ec)) {
-                fs::path blendDst = newDir / (projName + ".blend");
-                fs::copy_file(blendSrc, blendDst,
-                              fs::copy_options::overwrite_existing, ec);
-            }
+            // ── Lance Blender pour créer le fichier .blend ─────────────────────
+            const auto& selectedVersion = m_versions[m_selectedIdx];
+            fs::path blendFilePath = newDir / (projName + ".blend");
+            
+            // Chemin du script Python (relatif au répertoire d'installation de Blender)
+            // On utilise le chemin absolu en remontant depuis le répertoire courant
+            fs::path execDir = fs::path(selectedVersion.executable).parent_path();
+            fs::path appDir = execDir.parent_path().parent_path(); // remonte jusqu'à Blendgment
+            fs::path scriptPath = appDir / "resources" / "create_blend.py";
+            
+            // Commande : blender -b -P script.py -- output_path
+            std::string cmd = "\"" + selectedVersion.executable + "\" -b -P \"" + 
+                            scriptPath.string() + "\" -- \"" + blendFilePath.string() + "\" &";
+            std::system(cmd.c_str());
 
             m_visible = false;
             ImGui::CloseCurrentPopup();
