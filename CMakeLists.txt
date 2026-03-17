@@ -87,8 +87,13 @@ set(UTILS
     src/utils/Extractor.cpp
 )
 
+set(WIN_RESOURCES
+    resources/app_icon.rc
+)
+
 add_executable(${PROJECT_NAME}
     ${SOURCES} ${UI_PAGES} ${UI_MODALS} ${CORE} ${RENDERING} ${SERVICES} ${UTILS}
+    $<$<PLATFORM_ID:Windows>:${WIN_RESOURCES}>
 )
 
 target_include_directories(${PROJECT_NAME} PRIVATE

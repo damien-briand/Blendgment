@@ -57,7 +57,7 @@ void ProjectsPage::render(const char*      projectsPath,
 
     float panelH = projects.empty() ? 72.f
                  : std::min((int)projects.size() * 58.f + 16.f, 380.f);
-    ImGui::BeginChild("##proj_panel", ImVec2(660.f, panelH), false);
+    ImGui::BeginChild("##proj_panel", ImVec2(900.f, panelH), false);
 
     if (projects.empty()) {
         ImGui::Spacing(); ImGui::Spacing();
@@ -93,14 +93,28 @@ void ProjectsPage::render(const char*      projectsPath,
             ImGui::Text("%s", dispPath.c_str());
             ImGui::PopStyleColor();
 
-            // ── Bouton Ouvrir ─────────────────────────────────────────────
-            ImGui::SameLine(listW - 228.f);
+            // ── Bouton Open In Blender ────────────────────────────────────────
+            ImGui::SameLine(listW - 190.f);
             ImGui::PushStyleColor(ImGuiCol_Button,        Col::BgCard);
             ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(0.25f, 0.25f, 0.32f, 1.f));
             ImGui::PushStyleColor(ImGuiCol_ButtonActive,  Col::BgPanel);
             ImGui::PushStyleVar  (ImGuiStyleVar_FrameRounding, 6.f);
-            std::string openId = "  Ouvrir##open_" + name;
-            if (ImGui::Button(openId.c_str(), ImVec2(100.f, 24.f))) {
+            std::string openBlId = "Blender##openbl_" + name;
+            if (ImGui::Button(openBlId.c_str(), ImVec2(90.f, 24.f))) {
+                std::string cmd = "blender \"" + projPath.string() + "/" + name + ".blend\" &";
+                std::system(cmd.c_str());
+            }
+            ImGui::PopStyleVar();
+            ImGui::PopStyleColor(3);
+
+            // ── Bouton Ouvrir ────────────────────────────────────────────────────
+            ImGui::SameLine(listW - 285.f);
+            ImGui::PushStyleColor(ImGuiCol_Button,        Col::BgCard);
+            ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(0.25f, 0.25f, 0.32f, 1.f));
+            ImGui::PushStyleColor(ImGuiCol_ButtonActive,  Col::BgPanel);
+            ImGui::PushStyleVar  (ImGuiStyleVar_FrameRounding, 6.f);
+            std::string openId = "Explore##open_" + name;
+            if (ImGui::Button(openId.c_str(), ImVec2(85.f, 24.f))) {
 #ifdef _WIN32
                 std::string cmd = "explorer \"" + projPath.string() + "\"";
 #elif __APPLE__
@@ -114,13 +128,13 @@ void ProjectsPage::render(const char*      projectsPath,
             ImGui::PopStyleColor(3);
 
             // ── Bouton Supprimer ──────────────────────────────────────────────
-            ImGui::SameLine(listW - 116.f);
+            ImGui::SameLine(listW - 90.f);
             ImGui::PushStyleColor(ImGuiCol_Button,        ImVec4(0.55f, 0.15f, 0.15f, 1.f));
             ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(0.75f, 0.20f, 0.20f, 1.f));
             ImGui::PushStyleColor(ImGuiCol_ButtonActive,  ImVec4(0.40f, 0.10f, 0.10f, 1.f));
             ImGui::PushStyleVar  (ImGuiStyleVar_FrameRounding, 6.f);
-            std::string delId = "  Suppr.##del_" + name;
-            if (ImGui::Button(delId.c_str(), ImVec2(100.f, 24.f))) {
+            std::string delId = "Suppr.##del_" + name;
+            if (ImGui::Button(delId.c_str(), ImVec2(75.f, 24.f))) {
                 m_deleteConfirm.visible  = true;
                 m_deleteConfirm.name     = name;
                 m_deleteConfirm.fullPath = projPath.string();
