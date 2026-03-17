@@ -1,6 +1,7 @@
 #include "ProjectsPage.h"
 #include "../Theme.h"
 #include "../modals/NewProjectModal.h"
+#include "../InstalledVersion.h"
 
 #include <imgui.h>
 #include <filesystem>
@@ -12,8 +13,10 @@
 
 // ─────────────────────────────────────────────────────────────────────────────
 void ProjectsPage::render(const char*      projectsPath,
-                          NewProjectModal& newProjectModal)
+                          NewProjectModal& newProjectModal,
+                          const char*      installPath)
 {
+    m_installPath = installPath;
     namespace fs = std::filesystem;
 
     // ── Titre ─────────────────────────────────────────────────────────────────
@@ -101,8 +104,12 @@ void ProjectsPage::render(const char*      projectsPath,
             ImGui::PushStyleVar  (ImGuiStyleVar_FrameRounding, 6.f);
             std::string openBlId = "Blender##openbl_" + name;
             if (ImGui::Button(openBlId.c_str(), ImVec2(90.f, 24.f))) {
-                std::string cmd = "blender \"" + projPath.string() + "/" + name + ".blend\" &";
-                std::system(cmd.c_str());
+                m_blenderSelect.visible     = true;
+                m_blenderSelect.projectPath = projPath.string();
+                m_blenderSelect.projectName = name;
+                m_blenderSelect.versions.clear();
+                bool dummy = false;
+                scanInstalledVersions(m_blenderSelect.versions, dummy, m_installPath);
             }
             ImGui::PopStyleVar();
             ImGui::PopStyleColor(3);
@@ -158,6 +165,7 @@ void ProjectsPage::render(const char*      projectsPath,
     ImGui::PopStyleColor();
 
     renderDeleteConfirmModal();
+    renderBlenderVersionModal();
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -264,4 +272,128 @@ void ProjectsPage::renderDeleteConfirmModal()
     ImGui::PopStyleColor(2);
 
     if (!open) m_deleteConfirm.visible = false;
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Modale de sélection de version de Blender
+// ─────────────────────────────────────────────────────────────────────────────
+void ProjectsPage::renderBlenderVersionModal()
+{
+    if (!m_blenderSelect.visible) return;
+
+    ImGuiIO& io = ImGui::GetIO();
+    ImGui::SetNextWindowPos(ImVec2(io.DisplaySize.x * 0.5f, io.DisplaySize.y * 0.5f),
+                            ImGuiCond_Always, ImVec2(0.5f, 0.5f));
+    ImGui::SetNextWindowSize(ImVec2(480.f, 0.f), ImGuiCond_Always);
+    ImGui::OpenPopup("##blender_version_select");
+
+    ImGui::PushStyleColor(ImGuiCol_PopupBg,          Col::BgPanel);
+    ImGui::PushStyleColor(ImGuiCol_ModalWindowDimBg, ImVec4(0.f, 0.f, 0.f, 0.55f));
+    ImGui::PushStyleVar  (ImGuiStyleVar_WindowPadding,  ImVec2(28.f, 24.f));
+    ImGui::PushStyleVar  (ImGuiStyleVar_WindowRounding, 12.f);
+
+    bool open = true;
+    if (ImGui::BeginPopupModal("##blender_version_select", &open,
+        ImGuiWindowFlags_NoTitleBar | ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoMove))
+    {
+        // ── Titre ──────────────────────────────────────────────────────────────
+        ImGui::PushStyleColor(ImGuiCol_Text, Col::Accent);
+        ImGui::Text("Choisir une version de Blender");
+        ImGui::PopStyleColor();
+
+        ImGui::Spacing();
+        ImGui::PushStyleColor(ImGuiCol_Separator, Col::Separator);
+        ImGui::Separator();
+        ImGui::PopStyleColor();
+        ImGui::Spacing();
+
+        // ── Projet concerné ────────────────────────────────────────────────────
+        ImGui::PushStyleColor(ImGuiCol_Text, Col::TextDim);
+        ImGui::Text("Projet :");
+        ImGui::PopStyleColor();
+        ImGui::SameLine(0.f, 12.f);
+        ImGui::PushStyleColor(ImGuiCol_Text, Col::Text);
+        ImGui::Text("%s", m_blenderSelect.projectName.c_str());
+        ImGui::PopStyleColor();
+
+        ImGui::Spacing();
+        ImGui::Spacing();
+
+        // ── Liste des versions ─────────────────────────────────────────────────
+        ImGui::PushStyleColor(ImGuiCol_Text, Col::TextDim);
+        ImGui::Text("Versions disponibles :");
+        ImGui::PopStyleColor();
+
+        ImGui::Spacing();
+        ImGui::PushStyleColor(ImGuiCol_ChildBg, Col::BgCard);
+        ImGui::PushStyleVar  (ImGuiStyleVar_ChildRounding, 6.f);
+        ImGui::BeginChild("##version_list", ImVec2(ImGui::GetContentRegionAvail().x, 180.f), false);
+
+        if (m_blenderSelect.versions.empty()) {
+            ImGui::SetCursorPosY(80.f);
+            ImGui::SetCursorPosX((ImGui::GetContentRegionAvail().x - 100.f) * 0.5f);
+            ImGui::PushStyleColor(ImGuiCol_Text, Col::TextHint);
+            ImGui::Text("Aucune version installee");
+            ImGui::PopStyleColor();
+        } else {
+            ImGui::Spacing();
+            for (size_t i = 0; i < m_blenderSelect.versions.size(); ++i) {
+                const auto& versionInfo = m_blenderSelect.versions[i];
+                ImGui::SetCursorPosX(16.f);
+                ImGui::PushStyleColor(ImGuiCol_Text, Col::Text);
+                ImGui::Text("%s", versionInfo.version.c_str());
+                ImGui::PopStyleColor();
+
+                ImGui::SameLine(ImGui::GetContentRegionAvail().x - 110.f);
+                ImGui::PushStyleColor(ImGuiCol_Button,        Col::Accent);
+                ImGui::PushStyleColor(ImGuiCol_ButtonHovered, Col::AccentHover);
+                ImGui::PushStyleColor(ImGuiCol_ButtonActive,  Col::AccentPress);
+                ImGui::PushStyleVar  (ImGuiStyleVar_FrameRounding, 6.f);
+                std::string btnId = "Ouvrir##bl_" + versionInfo.version;
+                if (ImGui::Button(btnId.c_str(), ImVec2(90.f, 24.f))) {
+                    std::string cmd = "\"" + versionInfo.executable + "\" \"" + m_blenderSelect.projectPath + "/" + 
+                                      m_blenderSelect.projectName + ".blend\" &";
+                    std::system(cmd.c_str());
+                    m_blenderSelect.visible = false;
+                    ImGui::CloseCurrentPopup();
+                }
+                ImGui::PopStyleVar();
+                ImGui::PopStyleColor(3);
+
+                ImGui::Spacing();
+            }
+        }
+
+        ImGui::EndChild();
+        ImGui::PopStyleVar();
+        ImGui::PopStyleColor();
+
+        ImGui::Spacing();
+        ImGui::Spacing();
+        ImGui::PushStyleColor(ImGuiCol_Separator, Col::Separator);
+        ImGui::Separator();
+        ImGui::PopStyleColor();
+        ImGui::Spacing();
+
+        // ── Bouton Annuler ────────────────────────────────────────────────────
+        ImGui::SetCursorPosX(ImGui::GetContentRegionAvail().x - 104.f);
+        ImGui::PushStyleColor(ImGuiCol_Button,        Col::BgCard);
+        ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(0.25f, 0.25f, 0.32f, 1.f));
+        ImGui::PushStyleColor(ImGuiCol_ButtonActive,  Col::BgPanel);
+        ImGui::PushStyleVar  (ImGuiStyleVar_FrameRounding, 6.f);
+        if (ImGui::Button("  Annuler##blvercancel", ImVec2(90.f, 34.f))) {
+            m_blenderSelect.visible = false;
+            ImGui::CloseCurrentPopup();
+        }
+        ImGui::PopStyleVar();
+        ImGui::PopStyleColor(3);
+
+        ImGui::Spacing();
+        ImGui::EndPopup();
+    }
+
+    ImGui::PopStyleVar(2);
+    ImGui::PopStyleColor(2);
+
+    if (!open) m_blenderSelect.visible = false;
 }
