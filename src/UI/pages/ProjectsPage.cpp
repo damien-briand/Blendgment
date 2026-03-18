@@ -347,6 +347,38 @@ void ProjectsPage::renderBlenderVersionModal()
         ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.50f, 1.00f, 0.50f, 1.f));  // Vert clair
         ImGui::Text("%s (projet)", m_blenderSelect.originalVersion.c_str());
         ImGui::PopStyleColor();
+        
+        // Bouton Ouvrir pour la version originale
+        ImGui::SameLine(ImGui::GetContentRegionAvail().x - 100.f);
+        ImGui::PushStyleColor(ImGuiCol_Button,        Col::Accent);
+        ImGui::PushStyleColor(ImGuiCol_ButtonHovered, Col::AccentHover);
+        ImGui::PushStyleColor(ImGuiCol_ButtonActive,  Col::AccentPress);
+        ImGui::PushStyleVar  (ImGuiStyleVar_FrameRounding, 6.f);
+        
+        bool foundOriginal = false;
+        for (size_t i = 0; i < m_blenderSelect.versions.size(); ++i) {
+            if (m_blenderSelect.versions[i].version == m_blenderSelect.originalVersion.substr(1)) {  // substr(1) pour enlever le "v"
+                if (ImGui::Button("Ouvrir##original", ImVec2(90.f, 24.f))) {
+                    std::string cmd = "\"" + m_blenderSelect.versions[i].executable + "\" \"" + 
+                                      m_blenderSelect.projectPath + "/" + m_blenderSelect.projectName + ".blend\" &";
+                    std::system(cmd.c_str());
+                    m_blenderSelect.visible = false;
+                    ImGui::CloseCurrentPopup();
+                }
+                foundOriginal = true;
+                break;
+            }
+        }
+        
+        if (!foundOriginal) {
+            ImGui::BeginDisabled();
+            ImGui::Button("Ouvrir##original", ImVec2(90.f, 24.f));
+            ImGui::EndDisabled();
+        }
+        
+        ImGui::PopStyleVar();
+        ImGui::PopStyleColor(3);
+        
         ImGui::EndChild();
         ImGui::PopStyleVar();
         ImGui::PopStyleColor();
