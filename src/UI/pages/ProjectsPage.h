@@ -29,6 +29,7 @@ private:
         bool                              visible      = false;
         std::string                       projectPath;
         std::string                       projectName;
+        std::string                       originalVersion;  // Version du projet
         std::vector<InstalledVersion>     versions;
     } m_blenderSelect;
 

@@ -2,6 +2,7 @@
 #include "../Theme.h"
 #include "../modals/NewProjectModal.h"
 #include "../InstalledVersion.h"
+#include "../ProjectMetadata.h"
 
 #include <imgui.h>
 #include <filesystem>
@@ -76,6 +77,13 @@ void ProjectsPage::render(const char*      projectsPath,
             const auto& name = projects[i];
             fs::path projPath = base / name;
 
+            // ── Lire la version du projet ──────────────────────────────────────
+            ProjectMetadata metadata;
+            std::string versionDisplay = "Sans version";
+            if (ProjectMetadata::read(projPath.string(), metadata)) {
+                versionDisplay = "v" + metadata.version;
+            }
+
             // ── Icone + nom ──────────────────────────────────────────────────
             ImGui::SetCursorPosX(16.f);
             ImGui::PushStyleColor(ImGuiCol_Text, Col::Accent);
@@ -86,6 +94,11 @@ void ProjectsPage::render(const char*      projectsPath,
             std::string dispName = name;
             if (dispName.size() > 44) dispName = dispName.substr(0, 41) + "...";
             ImGui::Text("%s", dispName.c_str());
+            ImGui::PopStyleColor();
+            
+            ImGui::SameLine(0.f, 12.f);
+            ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.70f, 0.70f, 0.70f, 1.f));
+            ImGui::Text("[%s]", versionDisplay.c_str());
             ImGui::PopStyleColor();
 
             // ── Chemin + bouton Ouvrir ────────────────────────────────────────
@@ -107,6 +120,7 @@ void ProjectsPage::render(const char*      projectsPath,
                 m_blenderSelect.visible     = true;
                 m_blenderSelect.projectPath = projPath.string();
                 m_blenderSelect.projectName = name;
+                m_blenderSelect.originalVersion = versionDisplay;
                 m_blenderSelect.versions.clear();
                 bool dummy = false;
                 scanInstalledVersions(m_blenderSelect.versions, dummy, m_installPath);
@@ -319,9 +333,30 @@ void ProjectsPage::renderBlenderVersionModal()
         ImGui::Spacing();
         ImGui::Spacing();
 
-        // ── Liste des versions ─────────────────────────────────────────────────
+        // ── Version originale (recommandée) ────────────────────────────────────
+        ImGui::PushStyleColor(ImGuiCol_Text, Col::Accent);
+        ImGui::Text("Version recommandee :");
+        ImGui::PopStyleColor();
+
+        ImGui::Spacing();
+        ImGui::PushStyleColor(ImGuiCol_ChildBg, ImVec4(0.12f, 0.16f, 0.12f, 1.f));  // Vert foncé
+        ImGui::PushStyleVar  (ImGuiStyleVar_ChildRounding, 6.f);
+        ImGui::BeginChild("##version_original", ImVec2(ImGui::GetContentRegionAvail().x, 50.f), false);
+        ImGui::Spacing();
+        ImGui::SetCursorPosX(16.f);
+        ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.50f, 1.00f, 0.50f, 1.f));  // Vert clair
+        ImGui::Text("%s (projet)", m_blenderSelect.originalVersion.c_str());
+        ImGui::PopStyleColor();
+        ImGui::EndChild();
+        ImGui::PopStyleVar();
+        ImGui::PopStyleColor();
+
+        ImGui::Spacing();
+        ImGui::Spacing();
+
+        // ── Autres versions disponibles ────────────────────────────────────────
         ImGui::PushStyleColor(ImGuiCol_Text, Col::TextDim);
-        ImGui::Text("Versions disponibles :");
+        ImGui::Text("Autres versions :");
         ImGui::PopStyleColor();
 
         ImGui::Spacing();

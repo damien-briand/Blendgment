@@ -12,6 +12,7 @@
 #include <imgui.h>
 #include <filesystem>
 #include <cstring>
+#include <fstream>
 
 // ─────────────────────────────────────────────────────────────────────────────
 void NewProjectModal::open(const char* installPath)
@@ -184,6 +185,15 @@ void NewProjectModal::render(const char* projectsPath)
             std::string cmd = "\"" + selectedVersion.executable + "\" -b -P \"" + 
                             scriptPath.string() + "\" -- \"" + blendFilePath.string() + "\" &";
             std::system(cmd.c_str());
+
+            // ── Créer le fichier .blendgment ──────────────────────────────────
+            fs::path configPath = newDir / ".blendgment";
+            std::ofstream configFile(configPath);
+            if (configFile.is_open()) {
+                configFile << "version=" << selectedVersion.version << "\n";
+                configFile << "created=" << projName << "\n";
+                configFile.close();
+            }
 
             m_visible = false;
             ImGui::CloseCurrentPopup();
