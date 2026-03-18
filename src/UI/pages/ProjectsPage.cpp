@@ -23,7 +23,7 @@ void ProjectsPage::render(const char*      projectsPath,
     // ── Titre ─────────────────────────────────────────────────────────────────
     ImGui::SetCursorPos({28.f, 28.f});
     ImGui::PushStyleColor(ImGuiCol_Text, Col::Text);
-    ImGui::Text("Projets Blender");
+    ImGui::Text("Blender Projects");
     ImGui::PopStyleColor();
 
     // ── Bouton Nouveau projet ─────────────────────────────────────────────────
@@ -32,7 +32,7 @@ void ProjectsPage::render(const char*      projectsPath,
     ImGui::PushStyleColor(ImGuiCol_ButtonHovered, Col::AccentHover);
     ImGui::PushStyleColor(ImGuiCol_ButtonActive,  Col::AccentPress);
     ImGui::PushStyleVar  (ImGuiStyleVar_FrameRounding, 6.f);
-    if (ImGui::Button("+ Nouveau projet", ImVec2(160.f, 34.f)))
+    if (ImGui::Button("+ New project", ImVec2(160.f, 34.f)))
         newProjectModal.open(m_installPath);
     ImGui::PopStyleVar();
     ImGui::PopStyleColor(3);
