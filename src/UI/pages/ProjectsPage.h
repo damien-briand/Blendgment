@@ -5,6 +5,7 @@
 #include "../InstalledVersion.h"
 
 class NewProjectModal;
+class AddAssetModal;
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Page Projets
@@ -13,6 +14,7 @@ class ProjectsPage {
 public:
     void render(const char*      projectsPath,
                 NewProjectModal& newProjectModal,
+                AddAssetModal&   addAssetModal,
                 const char*      installPath);
 
 private:

@@ -1,6 +1,7 @@
 #include "ProjectsPage.h"
 #include "../Theme.h"
 #include "../modals/NewProjectModal.h"
+#include "../modals/AddAssetModal.h"
 #include "../InstalledVersion.h"
 #include "../ProjectMetadata.h"
 
@@ -15,6 +16,7 @@
 // ─────────────────────────────────────────────────────────────────────────────
 void ProjectsPage::render(const char*      projectsPath,
                           NewProjectModal& newProjectModal,
+                          AddAssetModal&   addAssetModal,
                           const char*      installPath)
 {
     m_installPath = installPath;
@@ -80,14 +82,16 @@ void ProjectsPage::render(const char*      projectsPath,
             // ── Lire la version du projet ──────────────────────────────────────
             ProjectMetadata metadata;
             std::string versionDisplay = "Sans version";
+            bool isGrandProject = false;
             if (ProjectMetadata::read(projPath.string(), metadata)) {
                 versionDisplay = "v" + metadata.version;
+                isGrandProject = (metadata.type == "grand");
             }
 
             // ── Icone + nom ──────────────────────────────────────────────────
             ImGui::SetCursorPosX(16.f);
             ImGui::PushStyleColor(ImGuiCol_Text, Col::Accent);
-            ImGui::Text("[P]");
+            ImGui::Text(isGrandProject ? "[G]" : "[P]");
             ImGui::PopStyleColor();
             ImGui::SameLine(0.f, 10.f);
             ImGui::PushStyleColor(ImGuiCol_Text, Col::Text);
@@ -99,6 +103,12 @@ void ProjectsPage::render(const char*      projectsPath,
             ImGui::SameLine(0.f, 12.f);
             ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.70f, 0.70f, 0.70f, 1.f));
             ImGui::Text("[%s]", versionDisplay.c_str());
+            ImGui::PopStyleColor();
+            
+            // Affiche le type de projet
+            ImGui::SameLine(0.f, 12.f);
+            ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.60f, 0.80f, 1.00f, 1.f));
+            ImGui::Text(isGrandProject ? "[Grand]" : "[Simple]");
             ImGui::PopStyleColor();
 
             // ── Chemin + bouton Ouvrir ────────────────────────────────────────
@@ -163,6 +173,44 @@ void ProjectsPage::render(const char*      projectsPath,
             ImGui::PopStyleVar();
             ImGui::PopStyleColor(3);
 
+            // ── Bouton Ajouter Asset (seulement pour les grands projets) ──────
+            if (isGrandProject) {
+                ImGui::SameLine(listW - 370.f);
+                ImGui::PushStyleColor(ImGuiCol_Button,        ImVec4(0.15f, 0.45f, 0.15f, 1.f));
+                ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(0.20f, 0.65f, 0.20f, 1.f));
+                ImGui::PushStyleColor(ImGuiCol_ButtonActive,  ImVec4(0.10f, 0.35f, 0.10f, 1.f));
+                ImGui::PushStyleVar  (ImGuiStyleVar_FrameRounding, 6.f);
+                std::string addAssetId = "+ Asset##addasset_" + name;
+                if (ImGui::Button(addAssetId.c_str(), ImVec2(75.f, 24.f))) {
+                    addAssetModal.open(projPath.string().c_str(), installPath);
+                }
+                ImGui::PopStyleVar();
+                ImGui::PopStyleColor(3);
+            }
+
+            // ── Afficher les assets si c'est un grand projet ──────────────────
+            if (isGrandProject) {
+                fs::path assetsDir = projPath / "Assets";
+                if (fs::is_directory(assetsDir, ec)) {
+                    std::vector<std::string> assets;
+                    for (auto& entry : fs::directory_iterator(assetsDir, ec)) {
+                        if (entry.is_directory(ec)) {
+                            assets.push_back(entry.path().filename().string());
+                        }
+                    }
+                    std::sort(assets.begin(), assets.end());
+
+                    // Affiche les assets en retrait
+                    for (const auto& asset : assets) {
+                        ImGui::Spacing();
+                        ImGui::SetCursorPosX(40.f);  // Retrait de 24 pixels
+                        ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.80f, 0.80f, 0.80f, 1.f));
+                        ImGui::Text("├─ [A] %s", asset.c_str());
+                        ImGui::PopStyleColor();
+                    }
+                }
+            }
+
             // ── Séparateur ───────────────────────────────────────────────────
             ImGui::Spacing();
             if (i + 1 < projects.size()) {
@@ -180,6 +228,7 @@ void ProjectsPage::render(const char*      projectsPath,
 
     renderDeleteConfirmModal();
     renderBlenderVersionModal();
+    addAssetModal.render();
 }
 
 // ─────────────────────────────────────────────────────────────────────────────

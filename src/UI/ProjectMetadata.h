@@ -12,6 +12,7 @@ namespace fs = std::filesystem;
 // ─────────────────────────────────────────────────────────────────────────────
 struct ProjectMetadata {
     std::string version;  // ex: "4.1.0"
+    std::string type;     // "simple" ou "grand"
     
     /// Lit le fichier .blendgment du dossier projectPath
     /// Retourne true si le fichier existe et est valide
@@ -30,6 +31,8 @@ struct ProjectMetadata {
         while (std::getline(file, line)) {
             if (line.find("version=") == 0) {
                 out.version = line.substr(8);  // "version=" = 8 chars
+            } else if (line.find("type=") == 0) {
+                out.type = line.substr(5);     // "type=" = 5 chars
             }
         }
         file.close();

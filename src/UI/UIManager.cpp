@@ -140,7 +140,7 @@ void UIManager::renderMainContent(float x, float y, float w, float h)
                                   m_installedDirty, m_installPath, m_installModal);
             break;
         case NavPage::Projects:
-            m_projectsPage.render(m_projectsPath, m_newProjectModal, m_installPath);
+            m_projectsPage.render(m_projectsPath, m_newProjectModal, m_addAssetModal, m_installPath);
             break;
         case NavPage::Settings:
             m_settingsPage.render(m_installPath, m_projectsPath);

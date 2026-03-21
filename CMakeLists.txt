@@ -61,6 +61,7 @@ set(UI_MODALS
     src/UI/modals/InstallModal.cpp
     src/UI/modals/DeleteModal.cpp
     src/UI/modals/NewProjectModal.cpp
+    src/UI/modals/AddAssetModal.cpp
 )
 set(CORE
     src/core/Window.cpp
