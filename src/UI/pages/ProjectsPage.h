@@ -19,6 +19,7 @@ public:
 
 private:
     void renderDeleteConfirmModal();
+    void renderAssetDeleteConfirmModal();
     void renderBlenderVersionModal();
 
     struct DeleteConfirm {
@@ -26,6 +27,12 @@ private:
         std::string name;
         std::string fullPath;
     } m_deleteConfirm;
+
+    struct AssetDeleteConfirm {
+        bool        visible  = false;
+        std::string assetName;
+        std::string assetPath;
+    } m_assetDeleteConfirm;
 
     struct BlenderVersionSelect {
         bool                              visible      = false;
@@ -36,4 +43,10 @@ private:
     } m_blenderSelect;
 
     const char* m_installPath = nullptr;
+
+    // ── Filtres ───────────────────────────────────────────────────────────────
+    char        m_searchFilter[256]    = {};
+    std::string m_versionFilter        = "";  // "" = tous
+    bool        m_showSimple           = true;
+    bool        m_showGrand            = true;
 };

@@ -39,6 +39,47 @@ void ProjectsPage::render(const char*      projectsPath,
     ImGui::PopStyleVar();
     ImGui::PopStyleColor(3);
 
+    // ── Filtres ───────────────────────────────────────────────────────────────
+    ImGui::SetCursorPos({28.f, 112.f});
+    ImGui::PushItemWidth(200.f);
+    ImGui::InputText("##search_filter", m_searchFilter, sizeof(m_searchFilter));
+    ImGui::PopItemWidth();
+    
+    ImGui::SameLine(0.f, 12.f);
+    ImGui::PushItemWidth(120.f);
+    
+    // Construire la liste des versions
+    std::vector<std::string> versionOptions;
+    versionOptions.push_back("[Toutes]");
+    
+    // Scanner les versions installées
+    std::vector<InstalledVersion> versions;
+    bool dummy = false;
+    scanInstalledVersions(versions, dummy, installPath);
+    for (const auto& v : versions) {
+        versionOptions.push_back("v" + v.version);
+    }
+    
+    // Combo pour sélectionner la version
+    static int versionIdx = 0;
+    const char** versionLabels = new const char*[versionOptions.size()];
+    for (size_t i = 0; i < versionOptions.size(); ++i) {
+        versionLabels[i] = versionOptions[i].c_str();
+    }
+    
+    if (ImGui::Combo("##version_filter", &versionIdx, versionLabels, (int)versionOptions.size())) {
+        m_versionFilter = (versionIdx == 0) ? "" : versionOptions[versionIdx];
+    }
+    
+    delete[] versionLabels;
+    ImGui::PopItemWidth();
+    
+    ImGui::SameLine(0.f, 12.f);
+    ImGui::Checkbox("Simple##show_simple", &m_showSimple);
+    
+    ImGui::SameLine(0.f, 12.f);
+    ImGui::Checkbox("Grand##show_grand", &m_showGrand);
+
     // ── Scanner les projets existants ─────────────────────────────────────────
     std::vector<std::string> projects;
     std::error_code ec;
@@ -51,18 +92,18 @@ void ProjectsPage::render(const char*      projectsPath,
     }
 
     // ── Compteur ─────────────────────────────────────────────────────────────
-    ImGui::SetCursorPos({28.f, 122.f});
+    ImGui::SetCursorPos({28.f, 140.f});
     ImGui::PushStyleColor(ImGuiCol_Text, Col::TextDim);
     ImGui::Text("%zu projet%s", projects.size(), projects.size() != 1 ? "s" : "");
     ImGui::PopStyleColor();
 
     // ── Liste des projets ─────────────────────────────────────────────────────
-    ImGui::SetCursorPos({28.f, 146.f});
+    ImGui::SetCursorPos({28.f, 160.f});
     ImGui::PushStyleColor(ImGuiCol_ChildBg, Col::BgPanel);
     ImGui::PushStyleVar(ImGuiStyleVar_ChildRounding, 8.f);
 
     float panelH = projects.empty() ? 72.f
-                 : std::min((int)projects.size() * 58.f + 16.f, 700.f);
+                 : std::min((int)projects.size() * 62.f + 16.f, 700.f);
     ImGui::BeginChild("##proj_panel", ImVec2(900.f, panelH), false);
 
     if (projects.empty()) {
@@ -87,6 +128,27 @@ void ProjectsPage::render(const char*      projectsPath,
                 versionDisplay = "v" + metadata.version;
                 isGrandProject = (metadata.type == "grand");
             }
+
+            // ── Appliquer les filtres ──────────────────────────────────────────
+            // 1. Filtre de recherche (nom)
+            if (m_searchFilter[0] != '\0') {
+                std::string searchLower = m_searchFilter;
+                std::string nameLower = name;
+                std::transform(searchLower.begin(), searchLower.end(), searchLower.begin(), ::tolower);
+                std::transform(nameLower.begin(), nameLower.end(), nameLower.begin(), ::tolower);
+                if (nameLower.find(searchLower) == std::string::npos)
+                    continue;
+            }
+            
+            // 2. Filtre de version
+            if (!m_versionFilter.empty() && versionDisplay != m_versionFilter)
+                continue;
+            
+            // 3. Filtre de type
+            if (isGrandProject && !m_showGrand)
+                continue;
+            if (!isGrandProject && !m_showSimple)
+                continue;
 
             // ── Icone + nom ──────────────────────────────────────────────────
             ImGui::SetCursorPosX(16.f);
@@ -203,10 +265,44 @@ void ProjectsPage::render(const char*      projectsPath,
                     // Affiche les assets en retrait
                     for (const auto& asset : assets) {
                         ImGui::Spacing();
-                        ImGui::SetCursorPosX(40.f);  // Retrait de 24 pixels
+                        ImGui::SetCursorPosX(40.f);
                         ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.80f, 0.80f, 0.80f, 1.f));
-                        ImGui::Text("├─ [A] %s", asset.c_str());
+                        ImGui::Text("-- [A] %s", asset.c_str());
                         ImGui::PopStyleColor();
+                        
+                        // ── Bouton Ouvrir Asset dans Blender ──────────────────
+                        ImGui::SameLine(listW - 185.f);
+                        ImGui::PushStyleColor(ImGuiCol_Button,        Col::BgCard);
+                        ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(0.25f, 0.25f, 0.32f, 1.f));
+                        ImGui::PushStyleColor(ImGuiCol_ButtonActive,  Col::BgPanel);
+                        ImGui::PushStyleVar  (ImGuiStyleVar_FrameRounding, 6.f);
+                        std::string openAssetId = "Blender##openasset_" + name + "_" + asset;
+                        if (ImGui::Button(openAssetId.c_str(), ImVec2(80.f, 20.f))) {
+                            m_blenderSelect.visible     = true;
+                            m_blenderSelect.projectPath = (assetsDir / asset).string();
+                            m_blenderSelect.projectName = asset;
+                            m_blenderSelect.originalVersion = versionDisplay;
+                            m_blenderSelect.versions.clear();
+                            bool dummy = false;
+                            scanInstalledVersions(m_blenderSelect.versions, dummy, m_installPath);
+                        }
+                        ImGui::PopStyleVar();
+                        ImGui::PopStyleColor(3);
+                        
+                        // ── Bouton Supprimer Asset ────────────────────────────
+                        ImGui::SameLine(listW - 90.f);
+                        ImGui::PushStyleColor(ImGuiCol_Button,        ImVec4(0.55f, 0.15f, 0.15f, 1.f));
+                        ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(0.75f, 0.20f, 0.20f, 1.f));
+                        ImGui::PushStyleColor(ImGuiCol_ButtonActive,  ImVec4(0.40f, 0.10f, 0.10f, 1.f));
+                        ImGui::PushStyleVar  (ImGuiStyleVar_FrameRounding, 6.f);
+                        std::string delAssetId = "Suppr.##delasset_" + name + "_" + asset;
+                        if (ImGui::Button(delAssetId.c_str(), ImVec2(75.f, 20.f))) {
+                            m_assetDeleteConfirm.visible   = true;
+                            m_assetDeleteConfirm.assetName = asset;
+                            m_assetDeleteConfirm.assetPath = (assetsDir / asset).string();
+                        }
+                        ImGui::PopStyleVar();
+                        ImGui::PopStyleColor(3);
                     }
                 }
             }
@@ -227,6 +323,7 @@ void ProjectsPage::render(const char*      projectsPath,
     ImGui::PopStyleColor();
 
     renderDeleteConfirmModal();
+    renderAssetDeleteConfirmModal();
     renderBlenderVersionModal();
     addAssetModal.render();
 }
@@ -335,6 +432,112 @@ void ProjectsPage::renderDeleteConfirmModal()
     ImGui::PopStyleColor(2);
 
     if (!open) m_deleteConfirm.visible = false;
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Modale de confirmation de suppression d'un asset
+// ─────────────────────────────────────────────────────────────────────────────
+void ProjectsPage::renderAssetDeleteConfirmModal()
+{
+    if (!m_assetDeleteConfirm.visible) return;
+
+    ImGuiIO& io = ImGui::GetIO();
+    ImGui::SetNextWindowPos(ImVec2(io.DisplaySize.x * 0.5f, io.DisplaySize.y * 0.5f),
+                            ImGuiCond_Always, ImVec2(0.5f, 0.5f));
+    ImGui::SetNextWindowSize(ImVec2(480.f, 0.f), ImGuiCond_Always);
+    ImGui::OpenPopup("##delete_asset_confirm");
+
+    ImGui::PushStyleColor(ImGuiCol_PopupBg,          Col::BgPanel);
+    ImGui::PushStyleColor(ImGuiCol_ModalWindowDimBg, ImVec4(0.f, 0.f, 0.f, 0.55f));
+    ImGui::PushStyleVar  (ImGuiStyleVar_WindowPadding,  ImVec2(28.f, 24.f));
+    ImGui::PushStyleVar  (ImGuiStyleVar_WindowRounding, 12.f);
+
+    bool open = true;
+    if (ImGui::BeginPopupModal("##delete_asset_confirm", &open,
+        ImGuiWindowFlags_NoTitleBar | ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoMove))
+    {
+        // ── Titre ──────────────────────────────────────────────────────────────
+        ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.90f, 0.30f, 0.30f, 1.f));
+        ImGui::Text("Supprimer l'asset");
+        ImGui::PopStyleColor();
+
+        ImGui::Spacing();
+        ImGui::PushStyleColor(ImGuiCol_Separator, Col::Separator);
+        ImGui::Separator();
+        ImGui::PopStyleColor();
+        ImGui::Spacing();
+
+        // ── Message ────────────────────────────────────────────────────────────
+        ImGui::PushStyleColor(ImGuiCol_Text, Col::TextDim);
+        ImGui::TextWrapped("Vous allez supprimer definitivement l'asset :");
+        ImGui::PopStyleColor();
+
+        ImGui::Spacing();
+        ImGui::SetCursorPosX(12.f);
+        ImGui::PushStyleColor(ImGuiCol_ChildBg, Col::BgCard);
+        ImGui::PushStyleVar  (ImGuiStyleVar_ChildRounding, 6.f);
+        ImGui::BeginChild("##del_asset_path", ImVec2(ImGui::GetContentRegionAvail().x, 36.f), false);
+        ImGui::SetCursorPos({10.f, 8.f});
+        ImGui::PushStyleColor(ImGuiCol_Text, Col::Text);
+        std::string disp = m_assetDeleteConfirm.assetName;
+        if (disp.size() > 52) disp = disp.substr(0, 49) + "...";
+        ImGui::Text("%s", disp.c_str());
+        ImGui::PopStyleColor();
+        ImGui::EndChild();
+        ImGui::PopStyleVar();
+        ImGui::PopStyleColor();
+
+        ImGui::Spacing();
+        ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.85f, 0.35f, 0.35f, 1.f));
+        ImGui::TextWrapped("Cette action est irreversible.");
+        ImGui::PopStyleColor();
+
+        ImGui::Spacing(); ImGui::Spacing();
+        ImGui::PushStyleColor(ImGuiCol_Separator, Col::Separator);
+        ImGui::Separator();
+        ImGui::PopStyleColor();
+        ImGui::Spacing();
+
+        // ── Boutons ────────────────────────────────────────────────────────────
+        float btnW    = 120.f;
+        float spacing = 12.f;
+        float totalW  = btnW * 2.f + spacing;
+        ImGui::SetCursorPosX((ImGui::GetContentRegionAvail().x - totalW) * 0.5f);
+
+        ImGui::PushStyleColor(ImGuiCol_Button,        ImVec4(0.60f, 0.15f, 0.15f, 1.f));
+        ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(0.78f, 0.20f, 0.20f, 1.f));
+        ImGui::PushStyleColor(ImGuiCol_ButtonActive,  ImVec4(0.42f, 0.10f, 0.10f, 1.f));
+        ImGui::PushStyleVar  (ImGuiStyleVar_FrameRounding, 6.f);
+        if (ImGui::Button("  Supprimer", ImVec2(btnW, 34.f))) {
+            std::error_code ec;
+            std::filesystem::remove_all(m_assetDeleteConfirm.assetPath, ec);
+            m_assetDeleteConfirm.visible = false;
+            ImGui::CloseCurrentPopup();
+        }
+        ImGui::PopStyleVar();
+        ImGui::PopStyleColor(3);
+
+        ImGui::SameLine(0.f, spacing);
+
+        ImGui::PushStyleColor(ImGuiCol_Button,        Col::BgCard);
+        ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(0.25f, 0.25f, 0.32f, 1.f));
+        ImGui::PushStyleColor(ImGuiCol_ButtonActive,  Col::BgPanel);
+        ImGui::PushStyleVar  (ImGuiStyleVar_FrameRounding, 6.f);
+        if (ImGui::Button("  Annuler##assetdelcancel", ImVec2(btnW, 34.f))) {
+            m_assetDeleteConfirm.visible = false;
+            ImGui::CloseCurrentPopup();
+        }
+        ImGui::PopStyleVar();
+        ImGui::PopStyleColor(3);
+
+        ImGui::Spacing();
+        ImGui::EndPopup();
+    }
+
+    ImGui::PopStyleVar(2);
+    ImGui::PopStyleColor(2);
+
+    if (!open) m_assetDeleteConfirm.visible = false;
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
