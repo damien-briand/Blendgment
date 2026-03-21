@@ -1,4 +1,4 @@
-#include "NewProjectModal.h"
+#include "AddAssetModal.h"
 #include "../Theme.h"
 #include "../InstalledVersion.h"
 
@@ -7,18 +7,18 @@
 #include <cstring>
 #include <fstream>
 
+namespace fs = std::filesystem;
+
 // ─────────────────────────────────────────────────────────────────────────────
-void NewProjectModal::open(const char* installPath, const char* parentPath)
+void AddAssetModal::open(const char* grandProjectPath, const char* installPath)
 {
     m_visible = true;
+    m_grandProjectPath = grandProjectPath;
     m_installPath = installPath;
-    m_parentPath = parentPath;
     memset(m_name, 0, sizeof(m_name));
     m_errorMsg.clear();
     m_selectedIdx = -1;
     m_versions.clear();
-    m_projectType = ProjectType::Simple;
-    m_showTypeSelect = (parentPath == nullptr);  // Affiche le choix de type que si c'est un projet principal
     
     // Scanne les versions disponibles
     bool dummy = false;
@@ -31,17 +31,15 @@ void NewProjectModal::open(const char* installPath, const char* parentPath)
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-void NewProjectModal::render(const char* projectsPath)
+void AddAssetModal::render()
 {
     if (!m_visible) return;
-
-    namespace fs = std::filesystem;
 
     ImGuiIO& io = ImGui::GetIO();
     ImGui::SetNextWindowPos(ImVec2(io.DisplaySize.x * 0.5f, io.DisplaySize.y * 0.5f),
                             ImGuiCond_Always, ImVec2(0.5f, 0.5f));
     ImGui::SetNextWindowSize(ImVec2(460.f, 0.f), ImGuiCond_Always);
-    ImGui::OpenPopup("##new_project");
+    ImGui::OpenPopup("##add_asset");
 
     ImGui::PushStyleColor(ImGuiCol_PopupBg,          Col::BgPanel);
     ImGui::PushStyleColor(ImGuiCol_ModalWindowDimBg, ImVec4(0.f, 0.f, 0.f, 0.55f));
@@ -49,12 +47,12 @@ void NewProjectModal::render(const char* projectsPath)
     ImGui::PushStyleVar  (ImGuiStyleVar_WindowRounding, 12.f);
 
     bool open = true;
-    if (ImGui::BeginPopupModal("##new_project", &open,
+    if (ImGui::BeginPopupModal("##add_asset", &open,
         ImGuiWindowFlags_NoTitleBar | ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoMove))
     {
         // ── Titre ──────────────────────────────────────────────────────────────
         ImGui::PushStyleColor(ImGuiCol_Text, Col::Text);
-        ImGui::Text("Nouveau projet");
+        ImGui::Text("Ajouter un asset");
         ImGui::PopStyleColor();
 
         ImGui::Spacing();
@@ -65,7 +63,7 @@ void NewProjectModal::render(const char* projectsPath)
 
         // ── Champ nom ──────────────────────────────────────────────────────────
         ImGui::PushStyleColor(ImGuiCol_Text, Col::TextDim);
-        ImGui::Text("Nom du projet :");
+        ImGui::Text("Nom de l'asset :");
         ImGui::PopStyleColor();
         ImGui::Spacing();
 
@@ -74,7 +72,7 @@ void NewProjectModal::render(const char* projectsPath)
         ImGui::PushStyleColor(ImGuiCol_FrameBgHovered, ImVec4(0.22f, 0.22f, 0.28f, 1.f));
         ImGui::PushStyleColor(ImGuiCol_FrameBgActive,  ImVec4(0.25f, 0.25f, 0.32f, 1.f));
         ImGui::PushStyleVar  (ImGuiStyleVar_FrameRounding, 6.f);
-        bool pressedEnter = ImGui::InputText("##proj_name", m_name, sizeof(m_name),
+        bool pressedEnter = ImGui::InputText("##asset_name", m_name, sizeof(m_name),
                                              ImGuiInputTextFlags_EnterReturnsTrue);
         ImGui::PopStyleVar();
         ImGui::PopStyleColor(3);
@@ -82,36 +80,6 @@ void NewProjectModal::render(const char* projectsPath)
         // Focus automatique à l'ouverture
         if (ImGui::IsWindowAppearing())
             ImGui::SetKeyboardFocusHere(-1);
-
-        // ── Sélection type de projet (seulement si c'est un projet principal) ───
-        if (m_showTypeSelect) {
-            ImGui::Spacing();
-            ImGui::PushStyleColor(ImGuiCol_Text, Col::TextDim);
-            ImGui::Text("Type de projet :");
-            ImGui::PopStyleColor();
-            ImGui::Spacing();
-
-            ImGui::Spacing();
-            if (ImGui::RadioButton("Simple##type_simple", m_projectType == ProjectType::Simple)) {
-                m_projectType = ProjectType::Simple;
-            }
-            ImGui::SameLine(0.f, 20.f);
-            ImGui::PushStyleColor(ImGuiCol_Text, Col::TextHint);
-            ImGui::Text("Un seul fichier Blender avec dossier textures");
-            ImGui::PopStyleColor();
-
-            ImGui::Spacing();
-            if (ImGui::RadioButton("Grand Projet##type_grand", m_projectType == ProjectType::Grand)) {
-                m_projectType = ProjectType::Grand;
-            }
-            ImGui::SameLine(0.f, 20.f);
-            ImGui::PushStyleColor(ImGuiCol_Text, Col::TextHint);
-            ImGui::Text("Projet avec Assets (compartimentage)");
-            ImGui::PopStyleColor();
-
-            ImGui::Spacing();
-            ImGui::Spacing();
-        }
 
         // ── Sélection version Blender ───────────────────────────────────────────
         ImGui::Spacing();
@@ -129,7 +97,7 @@ void NewProjectModal::render(const char* projectsPath)
         if (m_versions.empty()) {
             ImGui::Text("Aucune version trouvee");
         } else {
-            if (ImGui::BeginCombo("##version_combo", 
+            if (ImGui::BeginCombo("##asset_version_combo", 
                     m_selectedIdx >= 0 ? m_versions[m_selectedIdx].version.c_str() : "Selectionnez...")) {
                 for (size_t i = 0; i < m_versions.size(); ++i) {
                     bool isSelected = (i == (size_t)m_selectedIdx);
@@ -173,8 +141,8 @@ void NewProjectModal::render(const char* projectsPath)
                 return;
             }
 
-            std::string projName(m_name);
-            for (char c : projName) {
+            std::string assetName(m_name);
+            for (char c : assetName) {
                 if (c == '/' || c == '\\' || c == ':' || c == '*' ||
                     c == '?' || c == '"'  || c == '<' || c == '>' || c == '|') {
                     m_errorMsg = "Nom invalide : caracteres interdits ( / \\ : * ? \" < > | )";
@@ -182,48 +150,40 @@ void NewProjectModal::render(const char* projectsPath)
                 }
             }
             std::error_code ec;
-            fs::path base   = fs::weakly_canonical(fs::absolute(projectsPath), ec);
-            fs::path newDir = base / projName;
-            if (fs::exists(newDir, ec)) {
-                m_errorMsg = "Un projet avec ce nom existe deja.";
+            fs::path assetsDir = fs::path(m_grandProjectPath) / "Assets";
+            fs::path assetDir = assetsDir / assetName;
+            if (fs::exists(assetDir, ec)) {
+                m_errorMsg = "Un asset avec ce nom existe deja.";
                 return;
             }
-            fs::create_directories(newDir, ec);
+            fs::create_directories(assetDir, ec);
             if (ec) {
                 m_errorMsg = "Impossible de creer le dossier : " + ec.message();
                 return;
             }
 
             // ── Dossier textures ──────────────────────────────────────────────
-            fs::create_directories(newDir / "textures", ec);
-
-            // ── Dossier Assets si c'est un grand projet ────────────────────────
-            if (m_projectType == ProjectType::Grand) {
-                fs::create_directories(newDir / "Assets", ec);
-            }
+            fs::create_directories(assetDir / "textures", ec);
 
             // ── Lance Blender pour créer le fichier .blend ─────────────────────
             const auto& selectedVersion = m_versions[m_selectedIdx];
-            fs::path blendFilePath = newDir / (projName + ".blend");
+            fs::path blendFilePath = assetDir / (assetName + ".blend");
             
-            // Chemin du script Python (relatif au répertoire d'installation de Blender)
-            // On utilise le chemin absolu en remontant depuis le répertoire courant
             fs::path execDir = fs::path(selectedVersion.executable).parent_path();
-            fs::path appDir = execDir.parent_path().parent_path(); // remonte jusqu'à Blendgment
+            fs::path appDir = execDir.parent_path().parent_path();
             fs::path scriptPath = appDir / "resources" / "create_blend.py";
             
-            // Commande : blender -b -P script.py -- output_path
             std::string cmd = "\"" + selectedVersion.executable + "\" -b -P \"" + 
                             scriptPath.string() + "\" -- \"" + blendFilePath.string() + "\" &";
             std::system(cmd.c_str());
 
             // ── Créer le fichier .blendgment ──────────────────────────────────
-            fs::path configPath = newDir / ".blendgment";
+            fs::path configPath = assetDir / ".blendgment";
             std::ofstream configFile(configPath);
             if (configFile.is_open()) {
                 configFile << "version=" << selectedVersion.version << "\n";
-                configFile << "type=" << (m_projectType == ProjectType::Grand ? "grand" : "simple") << "\n";
-                configFile << "created=" << projName << "\n";
+                configFile << "type=simple\n";
+                configFile << "created=" << assetName << "\n";
                 configFile.close();
             }
 
@@ -251,7 +211,7 @@ void NewProjectModal::render(const char* projectsPath)
         ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(0.25f, 0.25f, 0.32f, 1.f));
         ImGui::PushStyleColor(ImGuiCol_ButtonActive,  Col::BgPanel);
         ImGui::PushStyleVar  (ImGuiStyleVar_FrameRounding, 6.f);
-        if (ImGui::Button("  Annuler##npcancel", ImVec2(btnW, 34.f))) {
+        if (ImGui::Button("  Annuler##addassetcancel", ImVec2(btnW, 34.f))) {
             m_visible = false;
             ImGui::CloseCurrentPopup();
         }

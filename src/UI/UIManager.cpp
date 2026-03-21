@@ -133,14 +133,14 @@ void UIManager::renderMainContent(float x, float y, float w, float h)
     switch (m_currentPage) {
         case NavPage::Dashboard:
             m_dashPage.render(m_fetcher, m_installedVersions,
-                              m_installedDirty, m_installPath, m_deleteModal);
+                              m_installedDirty, m_installPath, m_projectsPath, m_deleteModal);
             break;
         case NavPage::Versions:
             m_versionsPage.render(m_fetcher, m_installedVersions,
                                   m_installedDirty, m_installPath, m_installModal);
             break;
         case NavPage::Projects:
-            m_projectsPage.render(m_projectsPath, m_newProjectModal);
+            m_projectsPage.render(m_projectsPath, m_newProjectModal, m_addAssetModal, m_installPath);
             break;
         case NavPage::Settings:
             m_settingsPage.render(m_installPath, m_projectsPath);

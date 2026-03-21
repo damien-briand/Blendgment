@@ -10,6 +10,7 @@
 #include "modals/InstallModal.h"
 #include "modals/DeleteModal.h"
 #include "modals/NewProjectModal.h"
+#include "modals/AddAssetModal.h"
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Pages de navigation
@@ -60,4 +61,5 @@ private:
     InstallModal      m_installModal;
     DeleteModal       m_deleteModal;
     NewProjectModal   m_newProjectModal;
+    AddAssetModal     m_addAssetModal;
 };

@@ -16,6 +16,7 @@ public:
                 std::vector<InstalledVersion>&   versions,
                 bool&                            installedDirty,
                 const char*                      installPath,
+                const char*                      projectsPath,
                 DeleteModal&                     deleteModal);
 
 private:

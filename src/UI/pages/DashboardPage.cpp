@@ -6,12 +6,16 @@
 #include <imgui.h>
 #include <algorithm>
 #include <cstdio>
+#include <filesystem>
+
+namespace fs = std::filesystem;
 
 // ─────────────────────────────────────────────────────────────────────────────
 void DashboardPage::render(BlenderFetcher&                 fetcher,
                            std::vector<InstalledVersion>&  versions,
                            bool&                           installedDirty,
                            const char*                     installPath,
+                           const char*                     projectsPath,
                            DeleteModal&                    deleteModal)
 {
     // ── Rescan si le répertoire a changé ou après une installation ────────────
@@ -19,6 +23,18 @@ void DashboardPage::render(BlenderFetcher&                 fetcher,
         scanInstalledVersions(versions, installedDirty, installPath);
 
     int installedCount = (int)versions.size();
+
+    // ── Compter les projets ───────────────────────────────────────────────────
+    int projectCount = 0;
+    std::error_code ec;
+    fs::path base = fs::weakly_canonical(fs::absolute(projectsPath), ec);
+    if (fs::is_directory(base, ec)) {
+        for (auto& entry : fs::directory_iterator(base, ec)) {
+            if (entry.is_directory(ec)) {
+                projectCount++;
+            }
+        }
+    }
 
     ImGui::SetCursorPos({28.f, 28.f});
     ImGui::PushStyleColor(ImGuiCol_Text, Col::Text);
@@ -41,7 +57,14 @@ void DashboardPage::render(BlenderFetcher&                 fetcher,
         statCard("##c1", "Versions installees", countStr, sub, Col::Accent);
     }
     ImGui::SameLine(0.f, 14.f);
-    statCard("##c2", "Projets", "0", "Aucun projet", Col::Blue);
+    {
+        char projectStr[8];
+        snprintf(projectStr, sizeof(projectStr), "%d", projectCount);
+        const char* sub = projectCount == 0 ? "Aucun projet"
+                        : projectCount == 1 ? "projet"
+                        :                     "projets";
+        statCard("##c2", "Projets", projectStr, sub, Col::Blue);
+    }
     ImGui::SameLine(0.f, 14.f);
     {
         std::string latestVal = fetcher.hasData() ? fetcher.getLatestVersion() : "...";

@@ -4,22 +4,16 @@
 #include <vector>
 #include "../InstalledVersion.h"
 
-// Types de projets
-enum class ProjectType {
-    Simple,  // Projet simple : ProjectName.blend + textures/
-    Grand    // Grand projet : ProjectName.blend + textures/ + Assets/
-};
-
 // ─────────────────────────────────────────────────────────────────────────────
-// Modale de création d'un nouveau projet Blender
+// Modale d'ajout d'un asset (sous-projet) à un grand projet
 // ─────────────────────────────────────────────────────────────────────────────
-class NewProjectModal {
+class AddAssetModal {
 public:
-    /// Ouvre la modale et réinitialise les champs.
-    void open(const char* installPath, const char* parentPath = nullptr);
+    /// Ouvre la modale pour ajouter un asset à un grand projet
+    void open(const char* grandProjectPath, const char* installPath);
 
-    /// Rendu ImGUI – crée le dossier dans projectsPath si confirmé.
-    void render(const char* projectsPath);
+    /// Rendu ImGUI
+    void render();
 
     bool isVisible() const { return m_visible; }
 
@@ -29,8 +23,6 @@ private:
     std::string                   m_errorMsg;
     std::vector<InstalledVersion> m_versions;
     int                           m_selectedIdx   = -1;
+    std::string                   m_grandProjectPath;
     const char*                   m_installPath   = nullptr;
-    const char*                   m_parentPath    = nullptr;  // Pour les sous-projets (Assets)
-    ProjectType                   m_projectType   = ProjectType::Simple;
-    bool                          m_showTypeSelect = true;
 };
