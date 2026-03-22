@@ -2,14 +2,50 @@
 #include <filesystem>
 #include <sstream>
 #include <cstdlib>
+#include <iostream>
 
 namespace fs = std::filesystem;
 
 namespace PlatformPaths {
 
+// ─────────────────────────────────────────────────────────────────────────────
+// Helper: Check if a directory contains Blender installations
+// ─────────────────────────────────────────────────────────────────────────────
+static bool containsBlenderInstallation(const std::string& dirPath)
+{
+    std::error_code ec;
+    
+    if (!fs::is_directory(dirPath, ec)) {
+        return false;
+    }
+    
+    // Look for blender-X.Y.Z folders or blender.exe/blender executable
+    try {
+        for (auto& entry : fs::directory_iterator(dirPath, ec)) {
+            std::string name = entry.path().filename().string();
+            
+            // Check for "blender-X.Y.Z" pattern
+            if (name.rfind("blender-", 0) == 0) {
+                return true;
+            }
+            
+            // Check for blender executable
+            if (name == "blender" || name == "blender.exe") {
+                return true;
+            }
+        }
+    } catch (const std::exception& e) {
+        std::cerr << "[PlatformPaths] Error scanning " << dirPath << ": " << e.what() << "\n";
+        return false;
+    }
+    
+    return false;
+}
+
 std::vector<std::string> getDefaultBlenderPaths()
 {
     std::vector<std::string> paths;
+    std::error_code ec;
 
 #ifdef _WIN32
     // Windows: Check common installation directories
@@ -55,24 +91,23 @@ std::vector<std::string> getDefaultBlenderPaths()
     }
 
 #else
-    // Linux: Standard and custom paths
+    // Linux: Standard and custom paths - DO NOT add generic /home!
     paths.push_back("/opt/blender");
     paths.push_back("/usr/local/blender");
-    paths.push_back("/home");  // Generic, users may install in home
     
     const char* home = std::getenv("HOME");
     if (home) {
         paths.push_back(std::string(home) + "/blender");
-        paths.push_back(std::string(home) + "/Downloads");  // Check Downloads
+        paths.push_back(std::string(home) + "/Downloads");      // User might have in Downloads
     }
 #endif
 
-    // Filter out non-existent paths
+    // Filter: only keep paths that exist AND contain Blender installations
     std::vector<std::string> existing;
-    std::error_code ec;
     for (const auto& p : paths) {
-        if (fs::exists(p, ec)) {
+        if (containsBlenderInstallation(p)) {
             existing.push_back(p);
+            std::cout << "[PlatformPaths] Found Blender root: " << p << "\n";
         }
     }
 
