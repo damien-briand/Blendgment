@@ -5,7 +5,9 @@
 #include <string>
 
 // ─────────────────────────────────────────────────────────────────────────────
-void SettingsPage::render(char* installPath, char* projectsPath)
+void SettingsPage::render(char* installPath, char* projectsPath,
+                          std::function<void()> onSaveCallback,
+                          std::function<void(char*)> onAutoConfigCallback)
 {
     ImGui::SetCursorPos({28.f, 28.f});
     ImGui::PushStyleColor(ImGuiCol_Text, Col::Text);
@@ -34,13 +36,31 @@ void SettingsPage::render(char* installPath, char* projectsPath)
     labeledInput("Repertoire d'installation Blender :", installPath,  256, 480.f);
     labeledInput("Repertoire des projets :",            projectsPath, 256, 480.f);
 
+    // ── Bouton Auto-Config ────────────────────────────────────────────────────
     ImGui::SetCursorPosX(20.f);
+    ImGui::PushStyleColor(ImGuiCol_Button,        ImVec4(0.15f, 0.45f, 0.15f, 1.f));
+    ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(0.20f, 0.65f, 0.20f, 1.f));
+    ImGui::PushStyleColor(ImGuiCol_ButtonActive,  ImVec4(0.10f, 0.35f, 0.10f, 1.f));
+    ImGui::PushStyleVar  (ImGuiStyleVar_FrameRounding, 6.f);
+    if (ImGui::Button("Auto-config", ImVec2(120.f, 34.f))) {
+        if (onAutoConfigCallback) {
+            onAutoConfigCallback(installPath);
+        }
+    }
+    ImGui::PopStyleVar();
+    ImGui::PopStyleColor(3);
+    
+    ImGui::SameLine(0.f, 12.f);
+    
+    // ── Bouton Sauvegarder ────────────────────────────────────────────────────
     ImGui::PushStyleColor(ImGuiCol_Button,        Col::Accent);
     ImGui::PushStyleColor(ImGuiCol_ButtonHovered, Col::AccentHover);
     ImGui::PushStyleColor(ImGuiCol_ButtonActive,  Col::AccentPress);
     ImGui::PushStyleVar  (ImGuiStyleVar_FrameRounding, 6.f);
     if (ImGui::Button("Sauvegarder", ImVec2(120.f, 34.f))) {
-        // TODO : persister la config
+        if (onSaveCallback) {
+            onSaveCallback();
+        }
     }
     ImGui::PopStyleVar();
     ImGui::PopStyleColor(3);

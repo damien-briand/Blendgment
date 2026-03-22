@@ -1,13 +1,18 @@
 #pragma once
 
-#include <functional>
+#include <string>
+#include <vector>
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Page Paramètres
+// Platform-aware path utilities for Blender detection
 // ─────────────────────────────────────────────────────────────────────────────
-class SettingsPage {
-public:
-    void render(char* installPath, char* projectsPath,
-                std::function<void()> onSaveCallback = nullptr,
-                std::function<void(char*)> onAutoConfigCallback = nullptr);
-};
+
+namespace PlatformPaths {
+
+/// Get all common default Blender installation paths for the current platform
+std::vector<std::string> getDefaultBlenderPaths();
+
+/// Get the default projects path for the current platform
+std::string getDefaultProjectsPath();
+
+}  // namespace PlatformPaths

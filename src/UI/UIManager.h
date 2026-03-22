@@ -23,11 +23,17 @@ enum class NavPage { Dashboard, Versions, Projects, Settings };
 // ─────────────────────────────────────────────────────────────────────────────
 class UIManager {
 public:
-    UIManager()  = default;
+    UIManager();
     ~UIManager() = default;
 
     /// Appeler entre ImGui::NewFrame() et ImGui::Render()
     void render();
+    
+    /// Sauvegarde la configuration actuelle
+    void saveConfig();
+    
+    /// Effectue l'auto-configuration du chemin Blender
+    void performAutoConfig(char* installPath);
 
 private:
     // ── Layout ────────────────────────────────────────────────────────────────

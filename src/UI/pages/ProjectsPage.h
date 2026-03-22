@@ -43,7 +43,12 @@ private:
     } m_blenderSelect;
 
     const char* m_installPath = nullptr;
-
+    
+    // ── Cache des versions (pour éviter rescan à chaque frame) ───────────────
+    std::vector<InstalledVersion>  m_cachedVersions;
+    std::string                    m_lastScannedPath;
+    bool                           m_versionsCached = false;
+    
     // ── Filtres ───────────────────────────────────────────────────────────────
     char        m_searchFilter[256]    = {};
     std::string m_versionFilter        = "";  // "" = tous

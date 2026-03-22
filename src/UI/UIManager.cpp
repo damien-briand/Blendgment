@@ -1,7 +1,61 @@
 #include "UIManager.h"
 #include "Theme.h"
+#include "../Config.h"
+#include "PlatformPaths.h"
 
 #include <imgui.h>
+#include <iostream>
+#include <algorithm>
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Constructor : charge la configuration
+// ─────────────────────────────────────────────────────────────────────────────
+UIManager::UIManager()
+{
+    std::string installPath(m_installPath);
+    std::string projectsPath(m_projectsPath);
+    
+    // Charge la configuration sauvegardée
+    Config::load(installPath, projectsPath);
+    
+    // Copie dans les buffers
+    installPath.copy(m_installPath, sizeof(m_installPath) - 1);
+    m_installPath[installPath.length()] = '\0';
+    
+    projectsPath.copy(m_projectsPath, sizeof(m_projectsPath) - 1);
+    m_projectsPath[projectsPath.length()] = '\0';
+    
+    std::cout << "[UIManager] Constructor: loaded config\n";
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Sauvegarde la configuration
+// ─────────────────────────────────────────────────────────────────────────────
+void UIManager::saveConfig()
+{
+    Config::save(std::string(m_installPath), std::string(m_projectsPath));
+    m_installedDirty = true;  // Rescan versions after path change
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Effectue l'auto-configuration du chemin Blender
+// ─────────────────────────────────────────────────────────────────────────────
+void UIManager::performAutoConfig(char* installPath)
+{
+    auto defaultPaths = PlatformPaths::getDefaultBlenderPaths();
+    
+    if (!defaultPaths.empty()) {
+        // Utiliser le premier chemin trouvé
+        std::string firstPath = defaultPaths[0];
+        firstPath.copy(installPath, 255);
+        installPath[std::min(firstPath.length(), (size_t)255)] = '\0';
+        
+        std::cout << "[UIManager] Auto-config: found Blender at " << firstPath << "\n";
+        m_installedDirty = true;  // Rescan versions after path change
+    } else {
+        std::cerr << "[UIManager] Auto-config: No Blender installation found\n";
+    }
+}
 
 // ─────────────────────────────────────────────────────────────────────────────
 // render()  –  point d'entrée : fullscreen window + layout global
@@ -143,7 +197,9 @@ void UIManager::renderMainContent(float x, float y, float w, float h)
             m_projectsPage.render(m_projectsPath, m_newProjectModal, m_addAssetModal, m_installPath);
             break;
         case NavPage::Settings:
-            m_settingsPage.render(m_installPath, m_projectsPath);
+            m_settingsPage.render(m_installPath, m_projectsPath,
+                                 [this]() { this->saveConfig(); },
+                                 [this](char* path) { this->performAutoConfig(path); });
             break;
     }
 
