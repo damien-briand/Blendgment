@@ -48,15 +48,20 @@ void ProjectsPage::render(const char*      projectsPath,
     ImGui::SameLine(0.f, 12.f);
     ImGui::PushItemWidth(120.f);
     
-    // Construire la liste des versions
+    // ── Cache des versions: rescanner seulement si le chemin a changé ────────
+    if (m_lastScannedPath != installPath || !m_versionsCached) {
+        m_cachedVersions.clear();
+        bool dummy = false;
+        scanInstalledVersions(m_cachedVersions, dummy, installPath);
+        m_lastScannedPath = installPath;
+        m_versionsCached = true;
+    }
+    
+    // Construire la liste des versions à partir du cache
     std::vector<std::string> versionOptions;
     versionOptions.push_back("[Toutes]");
     
-    // Scanner les versions installées
-    std::vector<InstalledVersion> versions;
-    bool dummy = false;
-    scanInstalledVersions(versions, dummy, installPath);
-    for (const auto& v : versions) {
+    for (const auto& v : m_cachedVersions) {
         versionOptions.push_back("v" + v.version);
     }
     

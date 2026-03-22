@@ -56,8 +56,10 @@ set(SOURCES
     src/main.cpp
     src/Application.cpp
     src/VulkanContext.cpp
+    src/Config.cpp
     src/UI/UIManager.cpp
     src/UI/InstalledVersion.cpp
+    src/UI/PlatformPaths.cpp
 )
 set(UI_PAGES
     src/UI/pages/DashboardPage.cpp
