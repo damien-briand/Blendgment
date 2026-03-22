@@ -43,6 +43,14 @@ target_include_directories(imgui_lib PUBLIC
 )
 target_link_libraries(imgui_lib PUBLIC Vulkan::Vulkan glfw)
 
+# Lien statique des runtimes MinGW pour imgui_lib (Windows/GCC uniquement)
+if(WIN32 AND CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
+    target_link_options(imgui_lib PUBLIC
+        -static-libgcc
+        -static-libstdc++
+    )
+endif()
+
 # -- Project sources ----------------------------------------------------------
 set(SOURCES
     src/main.cpp
@@ -113,6 +121,15 @@ if(WIN32)
         NOMINMAX
         WIN32_LEAN_AND_MEAN
     )
+    # Lien statique des runtimes MinGW (GCC) pour eviter libgcc / libwinpthread
+    # manquants sur les machines sans MinGW installe.
+    if(CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
+        target_link_options(${PROJECT_NAME} PRIVATE
+            -static-libgcc
+            -static-libstdc++
+            -Wl,-Bstatic,--whole-archive -lwinpthread -Wl,--no-whole-archive,-Bdynamic
+        )
+    endif()
     # Copie automatique des DLLs vcpkg a cote de l'executable
     add_custom_command(TARGET ${PROJECT_NAME} POST_BUILD
         COMMAND ${CMAKE_COMMAND} -E copy_if_different
